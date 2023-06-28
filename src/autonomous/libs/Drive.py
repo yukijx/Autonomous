@@ -1,19 +1,25 @@
+
+
 from threading import Thread
 from threading import Timer
 import configparser
 import os
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+import sys
+
+sys.path.append('RoverMap')
+# os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
 import math
 from time import sleep
-from nis import maps
 
-import sys
-sys.path.append('../../Mission Control/RoverMap/')
+
 from server import MapServer
 
 from libs import UDPOut
 from libs import Location
 from libs import ARTracker
+
+
 
 class Drive:
     
@@ -282,4 +288,5 @@ class Drive:
             '''
                         
         
+
          

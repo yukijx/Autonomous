@@ -1,4 +1,6 @@
 #! /bin/bash
+cd src/autonomous
+
 #Parses the config file below
 main=$(cat config.ini | grep MAIN_CAMERA)
 main=${main: -3}

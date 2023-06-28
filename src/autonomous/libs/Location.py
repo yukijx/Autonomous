@@ -59,6 +59,7 @@ class Location:
 
     def start_GPS(self):
         # connect to it w gps_init
+        print(gps.__file__)
         gps.gps_init(self.swift_IP, self.swift_port)
 
     def stop_GPS(self):

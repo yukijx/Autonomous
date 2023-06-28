@@ -1,11 +1,12 @@
 import os
-path = (os.path.dirname(os.path.abspath(__file__)))
 import argparse
 import configparser
 from libs import UDPOut
 from libs import Drive
 import threading
 from time import sleep
+
+path = (os.path.dirname(os.path.abspath(__file__)))
 
 mbedIP='10.0.0.101'
 mbedPort=1001
@@ -20,9 +21,12 @@ def flash():
         sleep(.2)
 
 argParser = argparse.ArgumentParser()
-argParser.add_argument("cameraInput", type=int, help="takes a number representing which camera to use")
-argParser.add_argument("-id", "--ids", type=int, help="takes either 1 or 2 id values, defaults to -1 if id not assigned", nargs='+')
-argParser.add_argument("-ll", "--latLong", type=str, help="takes a filename for a text file, then reads that file for latlong coordinates")
+argParser.add_argument("cameraInput", type=int, \
+    help="Takes a list of integers representing camera hardware. Ex: 0 for /dev/video0")
+argParser.add_argument("-id", "--ids", type=int, \
+    help="takes either 1 or 2 id values, defaults to -1 if id not assigned", nargs='+')
+argParser.add_argument("-ll", "--latLong", type=str, \
+    help="takes a filename for a text file, then parses its latlong coordinates")
 args = argParser.parse_args()
 #Gets a list of coordinates from user and drives to them and then tracks the tag
 #Set id1 to -1 if not looking for a tag

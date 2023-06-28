@@ -1,3 +1,9 @@
 [submodule "gps"]
 	path = gps
 	url = ../gps/
+[submodule "YOLO"]
+	path = YOLO
+	url = https://github.com/Sooner-Rover-Team/YOLO
+[submodule "src/autonomous/gps"]
+	path = src/autonomous/gps
+	url = https://github.com/Sooner-Rover-Team/gps

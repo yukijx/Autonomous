@@ -2,8 +2,6 @@ import cv2
 import cv2.aruco as aruco
 import numpy as np
 import configparser
-import sys
-from time import sleep
 import os
 '''
 darknetPath = os.path.dirname(os.path.abspath(__file__)) + '/../YOLO/darknet/'
@@ -30,7 +28,7 @@ class ARTracker:
         # Open the config file
         config = configparser.ConfigParser(allow_no_value=True)
         if not config.read(configFile):
-            print(f"ERROR OPENING AR CONFIG:", end="")
+            print("ERROR OPENING AR CONFIG:", end="")
             if os.path.isabs(configFile):
                 print(configFile)
             else:
@@ -77,14 +75,18 @@ class ARTracker:
             #Makes sure the camera actually connects
             while True:
                 cam = cv2.VideoCapture(self.cameras[i])
+                
                 if not cam.isOpened():
-                    print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!Camera ", i, " did not open!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                    print(f"!!!!!!!!!!!!!!!!!!!!!!!!!! \
+                        Camera {i} did not open!!!!!!!!!!!!!!!!!!!!!!!!!!")
                     cam.release()
                     continue
                 cam.set(cv2.CAP_PROP_FRAME_HEIGHT, self.frameHeight)
                 cam.set(cv2.CAP_PROP_FRAME_WIDTH, self.frameWidth)
-                cam.set(cv2.CAP_PROP_BUFFERSIZE, 1) # greatly speeds up the program but the writer is a bit wack because of this
-                cam.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(self.format[0], self.format[1], self.format[2], self.format[3]))
+                # greatly speeds up the program but makes the writer a bit wack
+                cam.set(cv2.CAP_PROP_BUFFERSIZE, 1) 
+                cam.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(self.format[0], \
+                    self.format[1], self.format[2], self.format[3]))
                 #ret, testIm =  self.caps[i].read()[0]:
                 if not cam.read()[0]:
                     cam.release()
@@ -121,19 +123,23 @@ class ARTracker:
         
         return corners
     
-    #id1 is the main ar tag to track, id2 is if you're looking at a gatepost, image is the image to analyze
+    # id1 is the main ar tag to track, id2 is if you're looking at a gatepost, 
+    # image is the image to analyze
     def markerFound(self, id1, image, id2=-1):
         # converts to grayscale
         cv2.cvtColor(image, cv2.COLOR_RGB2GRAY, image)  
         
         self.index1 = -1
         self.index2 = -1
-        bw = image #will hold the black and white image
-        # tries converting to b&w using different different cutoffs to find the perfect one for the current lighting
+        bw = image # holds the black and white image
+        
+        # tries converting to b&w using different different cutoffs to 
+        # find the perfect one for the current lighting
         for i in range(40, 221, 60):
             bw = cv2.threshold(image,i,255, cv2.THRESH_BINARY)[1]
-            (self.corners, self.markerIDs, self.rejected) = aruco.detectMarkers(bw, self.markerDict)   
-            if not (self.markerIDs is None):
+            (self.corners, self.markerIDs, self.rejected) = \
+            aruco.detectMarkers(bw, self.markerDict)   
+            if (self.markerIDs is not None):
                 print('', end='') #I have not been able to reproduce an error when I have a print statement here so I'm leaving it in    
                 if id2==-1: #single post
                     self.index1 = -1 
