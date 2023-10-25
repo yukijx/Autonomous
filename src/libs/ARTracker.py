@@ -136,10 +136,9 @@ class ARTracker:
         # tries converting to b&w using different different cutoffs to 
         # find the perfect one for the current lighting
         for i in range(40, 221, 60):
-            bw = cv2.threshold(image,i,255, cv2.THRESH_BINARY)[1]
-            (self.corners, self.markerIDs, self.rejected) = \
-            aruco.detectMarkers(bw, self.markerDict)   
-            if (self.markerIDs is not None):
+            bw = cv2.adaptiveThreshold(image, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 25, 3)
+            (self.corners, self.markerIDs, self.rejected) = aruco.detectMarkers(bw, self.markerDict)   
+            if not (self.markerIDs is None):
                 print('', end='') #I have not been able to reproduce an error when I have a print statement here so I'm leaving it in    
                 if id2==-1: #single post
                     self.index1 = -1 
