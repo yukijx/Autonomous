@@ -4,8 +4,10 @@ import configparser
 import os
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 import math
+import numpy as np
 from time import sleep
 from nis import maps
+from math import cos, sin, pi
 
 import sys
 sys.path.append('../../Mission Control/RoverMap/')
@@ -137,9 +139,11 @@ class Drive:
         print("Left wheels: ", round(self.speeds[0],1))
         print("Right wheels: ", round(self.speeds[1],1))
     
+
+
     #Drives along a given list of GPS coordinates while looking for the given ar markers
     #Keep id2 at -1 if looking for one post, set id1 to -1 if you aren't looking for AR markers 
-    def driveAlongCoordinates(self, locations, id1, id2=-1):
+    def driveAlongCoordinates(self, locations, radius, id1, id2=-1):
         #Starts the GPS
         self.gps.start_GPS_thread()
         print('Waiting for GPS connection...')
@@ -179,11 +183,65 @@ class Drive:
                     self.speeds = [0,0]
                     return True
                     
-        self.gps.stop_GPS_thread()
-        print('Made it to location without seeing marker(s)')
+        print('Made it to location without seeing marker(s). Starting search algorithim. . .')
         self.speeds = [0,0]
+        #Aruco tag is not found so search algorithim is started
+
+        #Run if locations contains a radius value as to not run the search algorithim if it
+        #is not needed
+        if (radius != -1):
+        
+            #Run search algorithim
+            x = locations[0]
+            y = locations[1]
+            #locations[2] will hold the given radius
+            radius = radius/(np.pi*10)
+            #clear locations to remove the given gps coordinate to populate with coordinates generated
+            #by the search algorithim
+            locations.clear()
+
+            #repeatedly adds x and y values of generated coordinates to locations. Starts with the first generated
+            #point. It skips the starting point as the rover has already traveled to that position
+            for theta in np.linspace(10*np.pi,0, 50):
+
+                #TOTAL RADIUS OF CIRCLE
+                # DETERMINED BY DESIRED RADIUS/(PI*10) 
+                r = ((theta)*radius)
+
+                x_pos = r*cos(theta)+x
+                y_pos = r*sin(theta)+y
+
+                locations.append(x_pos)
+                locations.append(y_pos)
+
+            #loop while locations still has values in it
+            while len(locations) > 0:
+                self.errorAccumulation = 0
+                while self.gps.distance_to(locations[0], locations[1]) > .0025: #.0025km
+                    bearingTo = self.gps.bearing_to(locations[0], locations[1])
+                    print(self.gps.distance_to(locations[0], locations[1]) )
+                    self.speeds = self.getSpeeds(self.baseSpeed, bearingTo, 100) #It will sleep for 100ms
+                    sleep(.1) #Sleeps for 100ms
+                    self.printSpeeds()
+
+                    if(id1 != -1 and self.tracker.findMarker(id1, id2)):
+                        self.gps.stop_GPS_thread()
+                        print('Found Marker!')
+                        self.speeds = [0,0]
+                        return True
+                #removes the x and y values of the coordinate just visited if the aruco tag was not found    
+                del l[0]
+                del l[0]
+
+            print('Completed search without seeing marker(s)')
+            self.speeds = [0,0]
+
+        self.gps.stop_GPS_thread()
+
         return False
                 
+
+
     def trackARMarker(self, id1, id2=-1):
         stopDistance = 350 #stops when 250cm from markers TODO make sure rover doesn't stop too far away with huddlys
         timesNotFound = -1

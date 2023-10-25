@@ -23,6 +23,7 @@ argParser = argparse.ArgumentParser()
 argParser.add_argument("cameraInput", type=int, help="takes a number representing which camera to use")
 argParser.add_argument("-id", "--ids", type=int, help="takes either 1 or 2 id values, defaults to -1 if id not assigned", nargs='+')
 argParser.add_argument("-ll", "--latLong", type=str, help="takes a filename for a text file, then reads that file for latlong coordinates")
+argParser.add_argument("-r", "--radius", type=int, help="takes the radius for the Aruco tag search")
 args = argParser.parse_args()
 #Gets a list of coordinates from user and drives to them and then tracks the tag
 #Set id1 to -1 if not looking for a tag
@@ -30,6 +31,7 @@ def drive(rover):
     global flashing
     idList = [-1,-1]
     locations = []
+    radius = -1
 
     if args.ids is not None:
         for i in range(len(args.ids)):
@@ -55,9 +57,12 @@ def drive(rover):
                     locations.append(coords)
             f.close()
 
+    if args.radius is not None:
+        radius = args.radius
+
     flashing = False
     UDPOut.sendLED(mbedIP, mbedPort, 'r')
-    found = rover.driveAlongCoordinates(locations,id1, id2)
+    found = rover.driveAlongCoordinates(locations, radius, id1, id2)
     
     if id1 != -1:
         rover.trackARMarker(id1, id2)
