@@ -135,85 +135,85 @@ class ARTracker:
         
         # tries converting to b&w using different different cutoffs to 
         # find the perfect one for the current lighting
-        for i in range(40, 221, 60):
-            bw = cv2.adaptiveThreshold(image, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 25, 3)
-            (self.corners, self.markerIDs, self.rejected) = aruco.detectMarkers(bw, self.markerDict)   
-            if not (self.markerIDs is None):
-                print('', end='') #I have not been able to reproduce an error when I have a print statement here so I'm leaving it in    
-                if id2==-1: #single post
-                    self.index1 = -1 
-                    # this just checks to make sure that it found the right marker
-                    for m in range(len(self.markerIDs)):  
-                        if self.markerIDs[m] == id1:
-                            self.index1 = m  
-                            break  
-                
-                    if self.index1 != -1:
-                        print("Found the correct marker!")
-                        if self.write:
-                            self.videoWriter.write(bw)   #purely for debug   
-                            cv2.waitKey(1)
-                        break                    
-                    
-                    else:
-                        print("Found a marker but was not the correct one") 
-                
-                else: #gate post
-                    self.index1 = -1
-                    self.index2 = -1
-                    if len(self.markerIDs) == 1: 
-                       print('Only found marker ', self.markerIDs[0])
-                    else:
-                        for j in range(len(self.markerIDs) - 1, -1,-1): #I trust the biggest markers the most
-                            if self.markerIDs[j][0] == id1:
-                                self.index1 = j 
-                            elif self.markerIDs[j][0] == id2:
-                                self.index2 = j
-                    if self.index1 != -1 and self.index2 != -1:
-                        print('Found both markers!')
-                        if self.write:
-                            self.videoWriter.write(bw)   #purely for debug   
-                            cv2.waitKey(1)
-                        break                        
-                     
-            if i == 220:  #did not find any AR markers with any b&w cutoff using aruco                
-                #Checks to see if yolo can find a tag
-                if self.useYOLO:
-                    detections = []
-                    if not self.write:
-                        #this is a simpler detection function that doesn't return the image
-                        detections = simple_detection(image, self.network, self.class_names, self.thresh)
-                    else:
-                        #more complex detection that returns the image to be written
-                        image, detections = complex_detection(image, self.network, self.class_names, self.class_colors, self.thresh)
-                    #cv2.imwrite('ar.jpg', image)
-                    for d in detections:
-                        print(d)
-                        
-                    if id2 == -1 and len(detections) > 0:
-                        self.corners = self._convertToCorners(detections, 1)
-                        self.index1 = 0 #Takes the highest confidence ar tag
-                        if self.write:
-                            self.videoWriter.write(image)   #purely for debug   
-                            cv2.waitKey(1)                        
-                    elif len(detections) > 1:
-                        self.corners = self._convertToCorners(detections, 2)
-                        self.index1 = 0 #takes the two highest confidence ar tags
-                        self.index2 = 1
-                        if self.write:
-                            self.videoWriter.write(image)   #purely for debug   
-                            cv2.waitKey(1)
-                    print(self.corners)    
-                
-                #Not even YOLO saw anything
-                if self.index1 == -1 or (self.index2 == -1 and id2 != -1): 
+        #there was a loop here
+        bw = cv2.adaptiveThreshold(image, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 25, 3)
+        (self.corners, self.markerIDs, self.rejected) = aruco.detectMarkers(bw, self.markerDict)   
+        if not (self.markerIDs is None):
+            print('', end='') #I have not been able to reproduce an error when I have a print statement here so I'm leaving it in    
+            if id2==-1: #single post
+                self.index1 = -1 
+                # this just checks to make sure that it found the right marker
+                for m in range(len(self.markerIDs)):  
+                    if self.markerIDs[m] == id1:
+                        self.index1 = m  
+                        break  
+            
+                if self.index1 != -1:
+                    print("Found the correct marker!")
                     if self.write:
-                        self.videoWriter.write(image) 
-                        #cv2.imshow('window', image)
+                        self.videoWriter.write(bw)   #purely for debug   
                         cv2.waitKey(1)
-                    self.distanceToMarker = -1 
-                    self.angleToMarker = -999 
-                    return False 
+                        #break was here      
+                
+                else:
+                    print("Found a marker but was not the correct one") 
+            
+            else: #gate post
+                self.index1 = -1
+                self.index2 = -1
+                if len(self.markerIDs) == 1: 
+                    print('Only found marker ', self.markerIDs[0])
+                else:
+                    for j in range(len(self.markerIDs) - 1, -1,-1): #I trust the biggest markers the most
+                        if self.markerIDs[j][0] == id1:
+                            self.index1 = j 
+                        elif self.markerIDs[j][0] == id2:
+                            self.index2 = j
+                if self.index1 != -1 and self.index2 != -1:
+                    print('Found both markers!')
+                    if self.write:
+                        self.videoWriter.write(bw)   #purely for debug   
+                        cv2.waitKey(1)        
+                        #break
+                    
+        if i == 220:  #did not find any AR markers with any b&w cutoff using aruco                
+            #Checks to see if yolo can find a tag
+            if self.useYOLO:
+                detections = []
+                if not self.write:
+                    #this is a simpler detection function that doesn't return the image
+                    detections = simple_detection(image, self.network, self.class_names, self.thresh)
+                else:
+                    #more complex detection that returns the image to be written
+                    image, detections = complex_detection(image, self.network, self.class_names, self.class_colors, self.thresh)
+                #cv2.imwrite('ar.jpg', image)
+                for d in detections:
+                    print(d)
+                    
+                if id2 == -1 and len(detections) > 0:
+                    self.corners = self._convertToCorners(detections, 1)
+                    self.index1 = 0 #Takes the highest confidence ar tag
+                    if self.write:
+                        self.videoWriter.write(image)   #purely for debug   
+                        cv2.waitKey(1)                        
+                elif len(detections) > 1:
+                    self.corners = self._convertToCorners(detections, 2)
+                    self.index1 = 0 #takes the two highest confidence ar tags
+                    self.index2 = 1
+                    if self.write:
+                        self.videoWriter.write(image)   #purely for debug   
+                        cv2.waitKey(1)
+                print(self.corners)    
+            
+            #Not even YOLO saw anything
+            if self.index1 == -1 or (self.index2 == -1 and id2 != -1): 
+                if self.write:
+                    self.videoWriter.write(image) 
+                    #cv2.imshow('window', image)
+                    cv2.waitKey(1)
+                self.distanceToMarker = -1 
+                self.angleToMarker = -999 
+                return False 
         
         if id2 == -1:
             centerXMarker = (self.corners[self.index1][0][0][0] + self.corners[self.index1][0][1][0] + \
