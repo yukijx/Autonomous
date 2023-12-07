@@ -6,5 +6,11 @@ setuptools.setup(name='autonomous', version='1.1',
     #packages=setuptools.find_packages(),
     packages=['gps','libs'],
     #package_dir={'gps':'gps/', 'libs':'libs/', '.': '.'},
-    package_data={'gps':['_gps.so']})
+    package_data={'gps':['_gps.so']},
+        install_requires=[
+        'opencv-contrib-python',
+        'numpy',
+        'pytest'
+    ],
+    )
 

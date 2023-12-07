@@ -1,7 +1,10 @@
 from threading import Thread
 from threading import Timer
-import configparser
 import os
+
+from numpy import sign
+
+from libs.Wheels import WheelInterface
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 import math
 from time import sleep
@@ -9,72 +12,112 @@ from nis import maps
 
 import sys
 sys.path.append('../../Mission Control/RoverMap/')
-from server import MapServer
 
-from libs import UDPOut
-from libs import Location
+from libs.utilities import Location, send_udp, abs_clamp
+from libs.GPSInterface import GPSInterface
+from libs.Wheels import WheelInterface
 from libs import ARTracker
 
-class Drive:
+class Navigation:
     
-    def __init__(self, baseSpeed, cameras):
-        self.baseSpeed = baseSpeed
-        self.tracker = ARTracker.ARTracker(cameras)
+    def __init__(self, gps: GPSInterface, wheels: WheelInterface, tracker: ARTracker):
+        self.base_speed = .5
+
+        self._gps = gps
+        self._wheels = wheels
+        self._tracker = tracker
         
         #Starts everything needed by the map
-        self.mapServer = MapServer()
-        self.mapServer.register_routes()
-        self.mapServer.start(debug=False)
-        self.startMap(self.updateMap, .5)
-        sleep(.1)
+        # self.mapServer = MapServer()
+        # self.mapServer.register_routes()
+        # self.mapServer.start(debug=False)
+        # self.startMap(self.updateMap, .5)
+        # sleep(.1)
 
         #sets up the parser
-        config = configparser.ConfigParser(allow_no_value=True)
-        config.read(os.path.dirname(__file__) + '/../config.ini')
+        # config = configparser.ConfigParser(allow_no_value=True)
+        # config.read(os.path.dirname(__file__) + '/../config.ini')
         
         #parses config
-        self.mbedIP = str(config['CONFIG']['MBED_IP'])
-        self.mbedPort = int(config['CONFIG']['MBED_PORT'])
-        swiftIP = str(config['CONFIG']['SWIFT_IP'])
-        swiftPort = str(config['CONFIG']['SWIFT_PORT'])
-        self.gps = Location.Location(swiftIP, swiftPort)
-        self.gps.start_GPS()
+        # self.mbedIP = str(config['CONFIG']['MBED_IP'])
+        # self.mbedPort = int(config['CONFIG']['MBED_PORT'])
+        # swiftIP = str(config['CONFIG']['SWIFT_IP'])
+        # swiftPort = str(config['CONFIG']['SWIFT_PORT'])
+        # self.gps = GPSInterface(swiftIP, swiftPort)
+        # self.gps.start_GPS()
         
-        self.speeds = [0,0]
-        self.errorAccumulation = 0.0
+        self._accumulated_error = 0.0
+
+        self._wait_period = .05
         
         #starts the thread that sends wheel speeds
-        self.running = True
-        t = Thread(target=self.sendSpeed, name=('send wheel speeds'), args=())
-        t.daemon = True
-        t.start()
+        self._running = False
 
+    def start(self, locations):
+        self._locations = locations
+        self._thread = Thread(target=self._drive_along_coordinates, name=('drive along coordinates'))
+        self._running = True
+        self._thread.start()
+
+    def stop(self):
+        if self._running:
+            self._running = False
+            self._thread.join()
+
+    def _drive_along_coordinates(self):
+        print('starting drive along coordinates')
+        self._wheels.set_wheel_speeds(self.base_speed, self.base_speed)
+        sleep(1)
+        for l in self._locations:
+            print('going to a checkpoint')
+            print(l[0], l[1])
+            self.drive_to_location(l[0], l[1])
+            print('made it to a checkpoint')
+
+    def drive_to_location(self, lat, lon):
+        self._accumulated_error = 0
+        while self._running and self._gps.distance_to(lat, lon) > .0025:
+            bearing_to = self._gps.bearing_to(lat, lon)
+            print('dist',self._gps.distance_to(lat, lon) )
+            print('bearing', bearing_to)
+            speeds = self.calculate_speeds(.8, bearing_to, self._wait_period , kp=.0165, ki=.002)
+            print(speeds)
+            print(self._accumulated_error)
+            self._wheels.set_wheel_speeds(*speeds)
+
+            sleep(self._wait_period)
+
+        self._wheels.set_wheel_speeds(0, 0)
+
+    # def startMap(self, func, seconds):
+    #     def func_wrapper():
+    #         self.startMap(func, seconds)
+    #         func()
+    #     t = Timer(seconds, func_wrapper)
+    #     t.start()
+    #     return t
+
+    # def updateMap(self):
+    #     self.mapServer.update_rover_coords([self.gps.latitude, self.gps.longitude])
+
+    def calculate_speeds(self, speed, bearing_error, time, kp = .35, ki=.000035):
+        """
+        Gets the adjusted speed values for the wheels based off of the current
+        bearing error as well as the accumulated bearing error. (A PID loop using
+        the P and I constants).
         
-    def startMap(self, func, seconds):
-        def func_wrapper():
-            self.startMap(func, seconds)
-            func()
-        t = Timer(seconds, func_wrapper)
-        t.start()
-        return t
-
-    def updateMap(self):
-        self.mapServer.update_rover_coords([self.gps.latitude, self.gps.longitude])
-
-
-    #Every 100ms, send the current left and right wheel speeds to the mbeds
-    def sendSpeed(self):
-        while self.running:
-            ls = int(self.speeds[0])
-            rs = int(self.speeds[1])
-            UDPOut.sendWheelSpeeds(self.mbedIP, self.mbedPort, ls,ls,ls, rs,rs,rs)
-            sleep(.1)
-    
-    #time in milliseconds
-    #error in degrees
-    #Gets adjusted speeds based off of error and how long its been off (uses p and i)   
-    def getSpeeds(self,speed, error, time, kp = .35, ki=.000035):
-        values = [0,0]
+        Args:
+            speed: The speed the rover is going (float, in range 0-1)
+            bearing_error: The error in the bearing (degrees)
+            time: The time between calls to this function (seconds)
+            kp: The proportional constant
+            ki: The integral constant   
+            
+        Returns:
+            The adjusted speed values for the wheels
+        """
+        left_speed = 0
+        right_speed = 0
 
         #p and i constants if doing a pivot turn
         if speed == 0:
@@ -82,56 +125,75 @@ class Drive:
             ki = .001
 
         #Updates the error accumulation
-        self.errorAccumulation += error * time
+        self._accumulated_error += bearing_error * time
+        self._accumulated_error = abs_clamp(self._accumulated_error, -360, 360)
 
         #Gets the adjusted speed values
-        values[0] = speed + (error * kp + self.errorAccumulation * ki)
-        values[1] = speed - (error * kp + self.errorAccumulation * ki)
+        left_speed = speed + (bearing_error * kp + self._accumulated_error * ki)
+        right_speed = speed - (bearing_error * kp + self._accumulated_error * ki)
+
+        min_speed = .1
+        max_speed = .9
+
+        # print('getspeed', left_speed, right_speed)
+
+        # Makes sure the speeds are within the min and max
+        left_speed = abs_clamp(left_speed, min_speed, max_speed)
+        right_speed = abs_clamp(right_speed, min_speed, max_speed)
+
+        # prevents complete pivots
+        if abs(left_speed - right_speed) > max_speed * 2 - .2:
+            if sign(left_speed) > 0:
+                right_speed += abs(right_speed) * .2
+            else:
+                left_speed += abs(left_speed) * .2
+
+        return (left_speed, right_speed)
+
+
 
         #Gets the maximum speed values depending if it is pivoting or not
-        min = speed  - 30
-        max = speed + 30
-        if speed == 0:
-            max += 40
-            min -= 40
-        if max > 90:
-            max=90
-        if min < -90:
-            min = -90
+        # min = speed  - 30
+        # max = speed + 30
+        # if speed == 0:
+        #     max += 40
+        #     min -= 40
+        # if max > 90:
+        #     max=90
+        # if min < -90:
+        #     min = -90
             
-        #Makes sure the adjusted speed values are within the max and mins
-        if values[0] > max:
-            values[0] = max
-        elif values[0] < min:
-            values[0] = min
-        if values[1] > max:
-            values[1] = max
-        elif values[1] < min:
-            values[1] = min
+        # #Makes sure the adjusted speed values are within the max and mins
+        # if values[0] > max:
+        #     values[0] = max
+        # elif values[0] < min:
+        #     values[0] = min
+        # if values[1] > max:
+        #     values[1] = max
+        # elif values[1] < min:
+        #     values[1] = min
        
-        #Makes sure the speeds are >10 or <-10. Wheels lock up if the speeds are <10 and >-10
-        if values[0] <= 0 and values[0] > -10:
-            values[0] = -10
-        elif values[0] > 0 and values[0] < 10:
-            values[0] = 10
+        # #Makes sure the speeds are >10 or <-10. Wheels lock up if the speeds are <10 and >-10
+        # if values[0] <= 0 and values[0] > -10:
+        #     values[0] = -10
+        # elif values[0] > 0 and values[0] < 10:
+        #     values[0] = 10
         
-        if values[1] <= 0 and values[1] > -10:
-            values[1] = -10
-        elif values[1] > 0 and values[1] < 10:
-            values[1] = 10
+        # if values[1] <= 0 and values[1] > -10:
+        #     values[1] = -10
+        # elif values[1] > 0 and values[1] < 10:
+        #     values[1] = 10
         
-        if values[0] <= 0 and values[0] > -40 and speed == 0:
-            values[0] = -40
-        elif values[0] > 0 and values[0] < 40 and speed == 0:
-            values[0] = 40
+        # if values[0] <= 0 and values[0] > -40 and speed == 0:
+        #     values[0] = -40
+        # elif values[0] > 0 and values[0] < 40 and speed == 0:
+        #     values[0] = 40
         
-        if values[1] <= 0 and values[1] > -40 and speed == 0:
-            values[1] = -40
-        elif values[1] > 0 and values[1] < 40 and speed == 0:
-            values[1] = 40
+        # if values[1] <= 0 and values[1] > -40 and speed == 0:
+        #     values[1] = -40
+        # elif values[1] > 0 and values[1] < 40 and speed == 0:
+        #     values[1] = 40
     
-        return values
-        
     #Cleaner way to print out the wheel speeds
     def printSpeeds(self):
         print("Left wheels: ", round(self.speeds[0],1))
@@ -159,17 +221,17 @@ class Drive:
             self.printSpeeds()
             sleep(4)
         else:
-            self.speeds = (self.baseSpeed, self.baseSpeed)
+            self.speeds = (self.base_speed, self.base_speed)
             self.printSpeeds()
             sleep(3)
 
         #navigates to each location
         for l in locations:
-            self.errorAccumulation = 0
+            self._accumulated_error = 0
             while self.gps.distance_to(l[0], l[1]) > .0025: #.0025km
                 bearingTo = self.gps.bearing_to(l[0], l[1])
                 print(self.gps.distance_to(l[0], l[1]) )
-                self.speeds = self.getSpeeds(self.baseSpeed, bearingTo, 100) #It will sleep for 100ms
+                self.speeds = self.calculate_speeds(self.base_speed, bearingTo, 100) #It will sleep for 100ms
                 sleep(.1) #Sleeps for 100ms
                 self.printSpeeds()
                 
@@ -188,7 +250,7 @@ class Drive:
         stopDistance = 350 #stops when 250cm from markers TODO make sure rover doesn't stop too far away with huddlys
         timesNotFound = -1
         self.tracker.findMarker(id1, id2, cameras=1) #Gets and initial angle from the main camera
-        self.errorAccumulation = 0
+        self._accumulated_error = 0
            
         count = 0
         #Centers the middle camera with the tag
@@ -197,18 +259,18 @@ class Drive:
                 if timesNotFound == -1:
                     self.speeds = [0,0]
                     sleep(.5)
-                    self.speeds = [self.baseSpeed, self.baseSpeed]
+                    self.speeds = [self.base_speed, self.base_speed]
                     sleep(.8)
                     self.speeds = [0,0]
                 else:
-                    self.speeds = self.getSpeeds(0, self.tracker.angleToMarker, 100)
+                    self.speeds = self.calculate_speeds(0, self.tracker.angleToMarker, 100)
                 print(self.tracker.angleToMarker, " ", self.tracker.distanceToMarker)
                 timesNotFound = 0
             elif timesNotFound == -1: #Never seen the tag with the main camera
                 if(math.ceil(int(count/20)/5) % 2 == 1):
-                    self.speeds = [self.baseSpeed+5,-self.baseSpeed-5]
+                    self.speeds = [self.base_speed+5,-self.base_speed-5]
                 else:
-                    self.speeds = [-self.baseSpeed-5,self.baseSpeed+5]
+                    self.speeds = [-self.base_speed-5,self.base_speed+5]
             elif timesNotFound < 15: #Lost the tag for less than 1.5 seconds after seeing it with the main camera
                 timesNotFound += 1
                 print(f"lost tag {timesNotFound} times")
@@ -224,7 +286,7 @@ class Drive:
         sleep(.5)
             
         if id2 == -1:            
-            self.errorAccumulation = 0
+            self._accumulated_error = 0
             print("Locked on and ready to track")
             
             #Tracks down the tag
@@ -232,7 +294,7 @@ class Drive:
                 markerFound = self.tracker.findMarker(id1, cameras = 1) #Looks for the tag
                 
                 if self.tracker.distanceToMarker > stopDistance:
-                    self.speeds = self.getSpeeds(self.baseSpeed-8, self.tracker.angleToMarker, 100, kp = .5, ki = .0001)
+                    self.speeds = self.calculate_speeds(self.base_speed-8, self.tracker.angleToMarker, 100, kp = .5, ki = .0001)
                     timesNotFound = 0
                     print(f"Tag is {self.tracker.distanceToMarker}cm away at {self.tracker.angleToMarker} degrees")
                     
@@ -256,7 +318,7 @@ class Drive:
             #Gets the coords to the point that is 4m infront of the gate posts (get_coordinates expects distance in km)
             coords = self.gps.get_coordinates(self.tracker.distanceToMarker/100000.0+.004, self.tracker.angleToMarker)
             
-            self.speeds = [self.baseSpeed, self.baseSpeed]
+            self.speeds = [self.base_speed, self.base_speed]
             sleep(5)
             
             #TODO: test this more after getting the new GPS
