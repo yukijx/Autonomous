@@ -34,18 +34,6 @@ class Navigation:
         # self.startMap(self.updateMap, .5)
         # sleep(.1)
 
-        #sets up the parser
-        # config = configparser.ConfigParser(allow_no_value=True)
-        # config.read(os.path.dirname(__file__) + '/../config.ini')
-        
-        #parses config
-        # self.mbedIP = str(config['CONFIG']['MBED_IP'])
-        # self.mbedPort = int(config['CONFIG']['MBED_PORT'])
-        # swiftIP = str(config['CONFIG']['SWIFT_IP'])
-        # swiftPort = str(config['CONFIG']['SWIFT_PORT'])
-        # self.gps = GPSInterface(swiftIP, swiftPort)
-        # self.gps.start_GPS()
-        
         self._accumulated_error = 0.0
 
         self._wait_period = .05
@@ -69,21 +57,25 @@ class Navigation:
         self._wheels.set_wheel_speeds(self.base_speed, self.base_speed)
         sleep(1)
         for l in self._locations:
-            print('going to a checkpoint')
             print(l[0], l[1])
             self.drive_to_location(l[0], l[1])
             print('made it to a checkpoint')
+        self._wheels.set_wheel_speeds(0, 0)
+        print('finished drive along coordinates')
 
     def drive_to_location(self, lat, lon):
         self._accumulated_error = 0
         while self._running and self._gps.distance_to(lat, lon) > .0025:
             bearing_to = self._gps.bearing_to(lat, lon)
-            print('dist',self._gps.distance_to(lat, lon) )
-            print('bearing', bearing_to)
             speeds = self.calculate_speeds(.8, bearing_to, self._wait_period , kp=.0165, ki=.002)
-            print(speeds)
-            print(self._accumulated_error)
             self._wheels.set_wheel_speeds(*speeds)
+            print('dist             {0: 3.2f}'.format(self._gps.distance_to(lat, lon) * 1000))
+            print('current bearing  {0: 3.2f}'.format(self._gps.bearing))
+            print('target bearing   {0: 3.2f}'.format(bearing_to))
+            print('accum. error     {0: 3.2f}'.format(self._accumulated_error))
+            print('left speed       {0: 3.2f}'.format(speeds[0]*100))
+            print('right speed      {0: 3.2f}'.format(speeds[1]*100))
+            print()
 
             sleep(self._wait_period)
 
@@ -126,7 +118,7 @@ class Navigation:
 
         #Updates the error accumulation
         self._accumulated_error += bearing_error * time
-        self._accumulated_error = abs_clamp(self._accumulated_error, -360, 360)
+        self._accumulated_error = abs_clamp(self._accumulated_error, -200, 200)
 
         #Gets the adjusted speed values
         left_speed = speed + (bearing_error * kp + self._accumulated_error * ki)
@@ -149,53 +141,9 @@ class Navigation:
                 left_speed += abs(left_speed) * .2
 
         return (left_speed, right_speed)
-
-
-
-        #Gets the maximum speed values depending if it is pivoting or not
-        # min = speed  - 30
-        # max = speed + 30
-        # if speed == 0:
-        #     max += 40
-        #     min -= 40
-        # if max > 90:
-        #     max=90
-        # if min < -90:
-        #     min = -90
-            
-        # #Makes sure the adjusted speed values are within the max and mins
-        # if values[0] > max:
-        #     values[0] = max
-        # elif values[0] < min:
-        #     values[0] = min
-        # if values[1] > max:
-        #     values[1] = max
-        # elif values[1] < min:
-        #     values[1] = min
-       
-        # #Makes sure the speeds are >10 or <-10. Wheels lock up if the speeds are <10 and >-10
-        # if values[0] <= 0 and values[0] > -10:
-        #     values[0] = -10
-        # elif values[0] > 0 and values[0] < 10:
-        #     values[0] = 10
-        
-        # if values[1] <= 0 and values[1] > -10:
-        #     values[1] = -10
-        # elif values[1] > 0 and values[1] < 10:
-        #     values[1] = 10
-        
-        # if values[0] <= 0 and values[0] > -40 and speed == 0:
-        #     values[0] = -40
-        # elif values[0] > 0 and values[0] < 40 and speed == 0:
-        #     values[0] = 40
-        
-        # if values[1] <= 0 and values[1] > -40 and speed == 0:
-        #     values[1] = -40
-        # elif values[1] > 0 and values[1] < 40 and speed == 0:
-        #     values[1] = 40
     
     #Cleaner way to print out the wheel speeds
-    def printSpeeds(self):
+    def print_speeds(self):
         print("Left wheels: ", round(self.speeds[0],1))
         print("Right wheels: ", round(self.speeds[1],1))
     
@@ -212,17 +160,17 @@ class Navigation:
         #backs up and turns to avoid running into the last detected sign. Also allows it to get a lock on heading
         if(id1 > -1):
             self.speeds = [-60,-60]
-            self.printSpeeds()
+            self.print_speeds()
             sleep(2)
             self.speeds = [0,0]
-            self.printSpeeds()
+            self.print_speeds()
             sleep(2)
             self.speeds = [80,20]
-            self.printSpeeds()
+            self.print_speeds()
             sleep(4)
         else:
             self.speeds = (self.base_speed, self.base_speed)
-            self.printSpeeds()
+            self.print_speeds()
             sleep(3)
 
         #navigates to each location
@@ -233,7 +181,7 @@ class Navigation:
                 print(self.gps.distance_to(l[0], l[1]) )
                 self.speeds = self.calculate_speeds(self.base_speed, bearingTo, 100) #It will sleep for 100ms
                 sleep(.1) #Sleeps for 100ms
-                self.printSpeeds()
+                self.print_speeds()
                 
                 if(id1 != -1 and self.tracker.findMarker(id1, id2)):
                     self.gps.stop_GPS_thread()
@@ -279,7 +227,7 @@ class Navigation:
                 print("lost it") #TODO this is bad
                 timesNotFound = -1
                 #return False
-            self.printSpeeds()
+            self.print_speeds()
             sleep(.1)
             count+=1
         self.speeds = [0,0]
@@ -307,7 +255,7 @@ class Navigation:
                     print("Lost tag")
                     return False #TODO this is bad
                 
-                self.printSpeeds()
+                self.print_speeds()
                 sleep(.1)
             
             #We scored!

@@ -10,7 +10,7 @@ class Lights:
         self._running = False
         self._thread = threading.Thread(target=self._update_lights, args=(self._found_event,))
 
-    def _update_lights(self, event):
+    def _update_lights(self, event: threading.Event) -> None:
         while self._running:
             if event.is_set():
                 self._send_led_message(self._host, self._port, 'g')
@@ -21,25 +21,25 @@ class Lights:
                 self._send_led_message(self._host, self._port, 'r')
                 sleep(1)
 
-    def start(self, host, port):
+    def start(self, host: str, port: int) -> None:
         self._host = host
         self._port = port
         self._running = True
         self._thread.start()
 
-    def found(self):
+    def found(self) -> None:
         self._found_event.set()
 
-    def not_found(self):
+    def not_found(self) -> None:
         self._found_event.clear()
 
-    def stop(self):
+    def stop(self) -> None:
         self.not_found()
         if self._running:
             self._running = False
             self._thread.join()
 
-    def _send_led_message(self, host, port, color):
+    def _send_led_message(self, host: str, port: int, color: str) -> None:
         red = 0
         green = 0
         blue = 0

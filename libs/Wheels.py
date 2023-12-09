@@ -1,5 +1,5 @@
 import threading
-from time import sleep
+from time import sleep, time
 from libs.utilities import send_udp
 
 class WheelInterface:
@@ -7,7 +7,10 @@ class WheelInterface:
         self._START_BYTE = 0x23
         self._MESSAGE_TYPE = 0x00
         self._SEND_PERIOD = 0.1
+        self._TIMEOUT = 3.0
         self._speeds = [0, 0]
+        self._last_received = time()
+        self._lock = threading.Lock()
 
     def start(self, ip, port):
         self._ip = ip
@@ -24,26 +27,38 @@ class WheelInterface:
             self._thread.join()
 
     def set_wheel_speeds(self, left, right):
-        self._speeds = [left, right]
+        with self._lock:
+            self._last_received = time()
+            self._speeds = [left, right]
+    
+    def get_wheel_speeds(self):
+        with self._lock:
+            return self._speeds
 
     def _update_loop(self):
+        print('this is the real one')
         while self._running:
-            self.send_wheel_speeds(self._speeds[0], self._speeds[1])
+            with self._lock:
+                self._send_wheel_speeds()
             sleep(self._SEND_PERIOD)
 
-    def send_wheel_speeds(self, left, right):
+    def _send_wheel_speeds(self):
         """
-        Sends wheel speeds to the rover
-        left: -1 to 1
-        right: -1 to 1
+        Sends wheel speed message to the rover
         """
+        left, right = self._speeds
+
+        # send 0 if set has not been called in a while
+        if time() - self._last_received > self._TIMEOUT:
+            # set self variable and function variables to 0
+            self._speeds = left, right = [0, 0]
 
         #check if valid
         if left < -1 or left > 1:
             raise ValueError("Left wheel speed out of range")
         if right < -1 or right > 1:
             raise ValueError("Right wheel speed out of range")
-
+        
         #create message
         msg = bytearray(9)
 
@@ -77,5 +92,6 @@ class MockedWheelInterface(WheelInterface):
         while self._running:
             # skip the wheel speed update
             # print('Wheel speed in wheel thread: ', self._speeds)
-            # self._speeds = speeds
+            with self._lock:
+                self._send_wheel_speeds()
             sleep(self._SEND_PERIOD)

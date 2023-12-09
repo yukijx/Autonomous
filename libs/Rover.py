@@ -15,10 +15,6 @@ class Rover:
         self._ar = ARTracker()
         self._navigation = Navigation(self._gps, self._wheels, self._ar)
 
-        self._speed_lock = threading.Lock()
-        self._position_lock = threading.Lock()
-        self._position = [0, 0]
-
         self._tag_event = threading.Event()
         self._light_event = threading.Event()
 
