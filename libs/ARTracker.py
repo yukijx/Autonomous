@@ -33,6 +33,16 @@ class ARTracker:
         self._marker_found = False
         self._thread = threading.Thread(target=self._tracking_loop, name='AR search')
 
+        self._degrees_per_pixel = 0.09375
+        self._v_degrees_per_pixel = .125
+        self._focal_length = 435
+        self._focal_length_30_h = 590
+        self._focal_length_30_v = 470
+        self._known_marker_width = 20
+        self._format = 'MJPG'
+        self._frame_width = 640
+        self._frame_height = 480
+
         # sets up yolo
         # if use_YOLO:
         #     os.chdir(darknetPath)
@@ -109,8 +119,6 @@ class ARTracker:
         
         # takes the pixels from the marker to the center of the image and multiplies it by the degrees per pixel
         angle_to_marker = self._degrees_per_pixel * (center_x - self._frame_width/2)
-
-        print(center_x, angle_to_marker)
 
         '''
         distanceToAR = (knownWidthOfMarker(20cm) * focalLengthOfCamera) / pixelWidthOfMarker
