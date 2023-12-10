@@ -13,10 +13,7 @@ class Rover:
         self._wheels = WheelInterface()
         self._lights = Lights()
         self._ar = ARTracker()
-        self._navigation = Navigation(self._gps, self._wheels, self._ar)
-
-        self._tag_event = threading.Event()
-        self._light_event = threading.Event()
+        self._navigation = Navigation(self._gps, self._wheels, self._ar, self._lights)
 
     def __del__(self):
         self.stop()
@@ -59,4 +56,4 @@ class MockedRover(Rover):
         super().__init__()
         self._wheels = MockedWheelInterface()
         self._gps = MockedGPSInterface(self._wheels)
-        self._navigation = Navigation(self._gps, self._wheels, self._ar)
+        self._navigation = Navigation(self._gps, self._wheels, self._ar, self._lights)

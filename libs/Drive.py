@@ -13,19 +13,21 @@ from nis import maps
 import sys
 sys.path.append('../../Mission Control/RoverMap/')
 
-from libs.utilities import Location, send_udp, abs_clamp
+from libs.utilities import abs_clamp
 from libs.GPSInterface import GPSInterface
 from libs.Wheels import WheelInterface
-from libs import ARTracker
+from libs.ARTracker import ARTracker
+from libs.Lights import Lights
 
 class Navigation:
     
-    def __init__(self, gps: GPSInterface, wheels: WheelInterface, tracker: ARTracker):
+    def __init__(self, gps: GPSInterface, wheels: WheelInterface, tracker: ARTracker, lights: Lights):
         self.base_speed = .5
 
         self._gps = gps
         self._wheels = wheels
         self._tracker = tracker
+        self._lights = lights
         
         #Starts everything needed by the map
         # self.mapServer = MapServer()
@@ -62,24 +64,30 @@ class Navigation:
             print('made it to a checkpoint')
         self._wheels.set_wheel_speeds(0, 0)
         print('finished drive along coordinates')
+        self._lights.found()
 
     def drive_to_location(self, lat, lon):
         self._accumulated_error = 0
         while self._running and self._gps.distance_to(lat, lon) > .0025:
-            bearing_to = self._gps.bearing_to(lat, lon)
-            speeds = self.calculate_speeds(.8, bearing_to, self._wait_period , kp=.0165, ki=.002)
-            self._wheels.set_wheel_speeds(*speeds)
-            print('dist             {0: 3.2f}'.format(self._gps.distance_to(lat, lon) * 1000))
-            print('current bearing  {0: 3.2f}'.format(self._gps.bearing))
-            print('target bearing   {0: 3.2f}'.format(bearing_to))
-            print('accum. error     {0: 3.2f}'.format(self._accumulated_error))
-            print('left speed       {0: 3.2f}'.format(speeds[0]*100))
-            print('right speed      {0: 3.2f}'.format(speeds[1]*100))
-            print()
+            self._bearing_to = self._gps.bearing_to(lat, lon)
+            self._calc_speeds = self.calculate_speeds(.8, self._bearing_to, self._wait_period , kp=.0165, ki=.002)
+            self._wheels.set_wheel_speeds(*self._calc_speeds)
+            dist = self._gps.distance_to(lat, lon) * 1000
+
+            self.print_info(dist)
 
             sleep(self._wait_period)
 
         self._wheels.set_wheel_speeds(0, 0)
+
+    def print_info(self, dist: float) -> None:
+        print('dist             {0: 3.2f}'.format(dist))
+        print('current bearing  {0: 3.2f}'.format(self._gps.bearing))
+        print('target bearing   {0: 3.2f}'.format(self._bearing_to))
+        print('accum. error     {0: 3.2f}'.format(self._accumulated_error))
+        print('left speed       {0: 3.2f}'.format(self._calc_speeds[0]*100))
+        print('right speed      {0: 3.2f}'.format(self._calc_speeds[1]*100))
+        print()
 
     # def startMap(self, func, seconds):
     #     def func_wrapper():
@@ -142,58 +150,6 @@ class Navigation:
 
         return (left_speed, right_speed)
     
-    #Cleaner way to print out the wheel speeds
-    def print_speeds(self):
-        print("Left wheels: ", round(self.speeds[0],1))
-        print("Right wheels: ", round(self.speeds[1],1))
-    
-    #Drives along a given list of GPS coordinates while looking for the given ar markers
-    #Keep id2 at -1 if looking for one post, set id1 to -1 if you aren't looking for AR markers 
-    def driveAlongCoordinates(self, locations, id1, id2=-1):
-        #Starts the GPS
-        self.gps.start_GPS_thread()
-        print('Waiting for GPS connection...')
-        #while self.gps.all_zero: 
-        #    continue
-        print('Connected to GPS')
-        
-        #backs up and turns to avoid running into the last detected sign. Also allows it to get a lock on heading
-        if(id1 > -1):
-            self.speeds = [-60,-60]
-            self.print_speeds()
-            sleep(2)
-            self.speeds = [0,0]
-            self.print_speeds()
-            sleep(2)
-            self.speeds = [80,20]
-            self.print_speeds()
-            sleep(4)
-        else:
-            self.speeds = (self.base_speed, self.base_speed)
-            self.print_speeds()
-            sleep(3)
-
-        #navigates to each location
-        for l in locations:
-            self._accumulated_error = 0
-            while self.gps.distance_to(l[0], l[1]) > .0025: #.0025km
-                bearingTo = self.gps.bearing_to(l[0], l[1])
-                print(self.gps.distance_to(l[0], l[1]) )
-                self.speeds = self.calculate_speeds(self.base_speed, bearingTo, 100) #It will sleep for 100ms
-                sleep(.1) #Sleeps for 100ms
-                self.print_speeds()
-                
-                if(id1 != -1 and self.tracker.findMarker(id1, id2)):
-                    self.gps.stop_GPS_thread()
-                    print('Found Marker!')
-                    self.speeds = [0,0]
-                    return True
-                    
-        self.gps.stop_GPS_thread()
-        print('Made it to location without seeing marker(s)')
-        self.speeds = [0,0]
-        return False
-                
     def trackARMarker(self, id1, id2=-1):
         stopDistance = 350 #stops when 250cm from markers TODO make sure rover doesn't stop too far away with huddlys
         timesNotFound = -1

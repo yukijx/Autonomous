@@ -5,11 +5,8 @@ from pygame.locals import *
 import random
 
 import signal
-from libs.Drive import Navigation
-from libs.Wheels import MockedWheelInterface
-from libs.GPSInterface import MockedGPSInterface
 from libs.Rover import MockedRover
-from libs.utilities import Location
+from libs.utilities import degrees_to_meters, meters_to_degrees
 
 # this stuff makes it ctrl-c-able
 def signal_handler(sig, frame):
@@ -36,13 +33,15 @@ class Simulation:
         self.rover = MockedRover()
         self.rover.start_wheels('',0)
         self.rover.start_gps('',0)
+        self.rover.start_lights('',0)
 
     def create_locs(self, num):
         target_pos_m = []
         spread = 200
         for _ in range(num):
             target_pos_m.append((spread//2-random.random()*spread, spread//2-random.random()*spread))
-        self.gps_targets = [tuple([Location.meters_to_degrees(x) for x in t]) for t in target_pos_m]
+        # target_pos_m.append((-50, 0))
+        self.gps_targets = [tuple([meters_to_degrees(x) for x in t]) for t in target_pos_m]
     
     def start(self):
         self.rover.start_navigation(self.gps_targets)
@@ -60,8 +59,8 @@ class Simulation:
 
         # draw gps positions
         for lat, lon in gps_positions:
-            lat = Location.degrees_to_meters(lat)
-            lon = Location.degrees_to_meters(lon)
+            lat = degrees_to_meters(lat)
+            lon = degrees_to_meters(lon)
             rover_x, rover_y = world_to_screen(WIDTH, HEIGHT, lon, lat)
             pygame.draw.circle(self.screen, (255, 0, 0), (rover_x, rover_y), 5)
 
@@ -75,36 +74,41 @@ class Playground:
         self.orig_rover_rect = pygame.surface.Surface((int(self._box_size*2/3), self._box_size), pygame.SRCALPHA)
         self.orig_rover_rect.fill((0, 0, 0))
         self.orig_rover_rect.set_alpha(100)
-        front = pygame.surface.Surface((int(self._box_size*2/3), self._box_size/3), pygame.SRCALPHA)
-        front.fill((255, 0, 0))
-        self.orig_rover_rect.blit(front, (0, 0))
         self.running = True
 
     def draw_gps_measurements(self, gps_measurements):
         for lat, lon in gps_measurements:
-            lat = Location.degrees_to_meters(lat)
-            lon = Location.degrees_to_meters(lon)
+            lat = degrees_to_meters(lat)
+            lon = degrees_to_meters(lon)
             rover_x, rover_y = world_to_screen(WIDTH, HEIGHT, lon, lat)
             pygame.draw.circle(self.screen, (255, 0, 0), (rover_x, rover_y), 5)
 
     def draw_gps_targets(self, gps_targets):
         # draw a blue circle at each target position
         for lat, lon in gps_targets:
-            lat = Location.degrees_to_meters(lat)
-            lon = Location.degrees_to_meters(lon)
+            lat = degrees_to_meters(lat)
+            lon = degrees_to_meters(lon)
             target_x, target_y = world_to_screen(WIDTH, HEIGHT, lon, lat)
             pygame.draw.circle(self.screen, (0, 0, 255), (target_x, target_y), 5)
 
     def draw_rover(self, rover):
         # get rover coordinates
         lat, lon = rover._gps.get_real_position()
-        rover_x, rover_y = world_to_screen(WIDTH, HEIGHT, Location.degrees_to_meters(lon), Location.degrees_to_meters(lat))
+        rover_x, rover_y = world_to_screen(WIDTH, HEIGHT, degrees_to_meters(lon), degrees_to_meters(lat))
 
         # get rover bearing        
         real_bearing_rad = rover._gps.get_real_bearing()
         real_bearing_deg = real_bearing_rad * 180 / pi
 
         # draw rover
+        front = pygame.surface.Surface((int(self._box_size*2/3), self._box_size/3), pygame.SRCALPHA)
+        if rover._lights.current_color == 'g':
+            front.fill((0, 255, 0))
+        elif rover._lights.current_color == 'o':
+            front.fill((255, 165, 0))
+        elif rover._lights.current_color == 'r':
+            front.fill((255, 0, 0))
+        self.orig_rover_rect.blit(front, (0, 0))
         rover_rect = pygame.transform.rotate(self.orig_rover_rect, -real_bearing_deg)
         bounds = rover_rect.get_bounding_rect()
         rover_rect.set_alpha(100)
@@ -146,7 +150,7 @@ class Playground:
 
 if __name__ == '__main__':
     sim = Simulation()
-    sim.create_locs(1)
+    sim.create_locs(2)
     sim.start()
     p = Playground(sim)
     p.run()

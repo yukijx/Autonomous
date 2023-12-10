@@ -5,9 +5,10 @@ import time
 
 from numpy.random import Generator, PCG64
 
-from libs.utilities import Location
+from libs.utilities import calc_bearing, distance_to, meters_to_degrees, calc_average_bearing
+from libs.Wheels import WheelInterface
 
-# the gps python bindings wont compile so i made a fake one
+# the gps python bindings wont compile for me so i made a fake one
 # that does absolutely nothing and returns 0 for everything
 # so that MockedGPSInterface can use the same interface
 class fake_gps:
@@ -17,22 +18,30 @@ class fake_gps:
         self._height = 0
         self._time = 0
         self._error = 0
+    @staticmethod
     def get_latitude():
         return 0
+    @staticmethod
     def get_longitude():
         return 0
+    @staticmethod
     def get_height():
         return 0
+    @staticmethod
     def get_time():
         return 0
+    @staticmethod
     def get_error():
         return 0
-    
+    @staticmethod
     def gps_init(ip, port):
         return
+    @staticmethod
     def gps_finish():
         return
 
+# it will use fake gps if the gps module is not found
+# or you can force it to use fake gps by setting this to True
 USE_FAKE_GPS = False
 
 if not USE_FAKE_GPS:
@@ -47,27 +56,39 @@ if not USE_FAKE_GPS:
 else:
     gps = fake_gps
 
-# import os
-# os.chdir(os.path.dirname(os.path.abspath(__file__)))
-# Class that computes functions related to location of Rover
 class GPSInterface:
+    """
+    Interface for GPS
+    
+    Attributes:
+        latitude (float): Current latitude
+        longitude (float): Current longitude
+        old_latitude (float): Previous latitude
+        old_longitude (float): Previous longitude
+        height (float): Current height
+        time (float): Current time
+        error (float): Current error
+        bearing (float): Current bearing
+        running (bool): Whether the GPS is running
+        _UPDATE_PERIOD (float): How often to query the GPS for new data
+        _AVERAGE_BEARING_LENGTH (int): How many bearings to average over time
+    """
     def __init__(self):
-        self.latitude = 0
-        self.longitude = 0
-        self.old_latitude = 0
-        self.old_longitude = 0
-        self.height = 0
-        self.time = 0
-        self.error = 0
-        self.bearing = 0.0
+        self.latitude = 0 # degrees
+        self.longitude = 0 # degrees 
+        self.old_latitude = 0 # degrees
+        self.old_longitude = 0 # degrees
+        self.height = 0 # meters (? not sure never used this) 
+        self.time = 0 # seconds (? not sure about this either)
+        self.error = 0 # meters (? this needs to be checked)
+        self.bearing = 0.0 # degrees
         self.running = True
-        self.all_zero = True
-        self._update_period = .25
+        self._UPDATE_PERIOD = .25 # seconds
 
         # create a circular queue of average bearings
         # to smooth out some noise
-        self._average_bearing_length = 4
-        self._average_bearing = [0] * self._average_bearing_length
+        self._AVERAGE_BEARING_LENGTH = 4
+        self._average_bearing = [0] * self._AVERAGE_BEARING_LENGTH
         self._average_bearing_index = 0
 
     def get_position(self):
@@ -90,7 +111,7 @@ class GPSInterface:
         Returns:
             float: Distance in kilometers between self and given latitude and longitude
         """
-        return Location.distance_to(self.latitude, self.longitude, lat, lon)
+        return distance_to(self.latitude, self.longitude, lat, lon)
 
     def bearing_to(self, lat:float, lon:float):
         """ 
@@ -104,7 +125,7 @@ class GPSInterface:
         Returns:
             float: Difference between given bearing to location and current bearing
         """
-        resultbearing = Location.calc_bearing(self.latitude, self.longitude, lat, lon) - self.bearing
+        resultbearing = calc_bearing(self.latitude, self.longitude, lat, lon) - self.bearing
         if resultbearing < -180:
             resultbearing += 360
         elif resultbearing > 180:
@@ -147,13 +168,14 @@ class GPSInterface:
         Returns:
             float: Bearing between two points
         """
-        bearing = Location.calc_bearing(lat1, lon1, lat2, lon2)
-        # add 360 to bearing to make sure it's positive
-        # this allows you to average bearing (would fail if bearing was 
-        # between -180 and 180 because south would average to north)
-        self._average_bearing[self._average_bearing_index] = bearing + 360
-        self._average_bearing_index = (self._average_bearing_index + 1) % self._average_bearing_length
-        return (sum(self._average_bearing) / self._average_bearing_length) - 360
+        bearing = calc_bearing(lat1, lon1, lat2, lon2)
+        self._average_bearing[self._average_bearing_index] = bearing
+        self._average_bearing_index = (self._average_bearing_index + 1) % self._AVERAGE_BEARING_LENGTH
+
+        # if the average magnitude is greater than 90, then the average
+        # is probably on the other side of the circle, so we need to
+        # add 360 to all the negative bearings in the queue
+        return calc_average_bearing(self._average_bearing)
 
     def _update_fields_loop(self):
         """
@@ -170,22 +192,21 @@ class GPSInterface:
                 self.time = gps.get_time()
                 self.error = gps.get_error()
                 self.bearing = self.calc_avg_bearing(self.old_latitude, self.old_longitude, self.latitude, self.longitude)
-                self.all_zero = False
             else:
-                self.all_zero = True
+                pass
             # maybe print info or sleep or something idk
-            sleep(self._update_period)
+            sleep(self._UPDATE_PERIOD)
 
 class MockedGPSInterface(GPSInterface):
-    def __init__(self, wheels):
+    def __init__(self, wheels: WheelInterface):
         super().__init__()
         self._wheels = wheels
         self._real_lat = 0 # degrees
         self._real_lon = 0 # degrees
         self._real_bearing = 0 # radians
-        self._noise_dev_m = 0.03 # 30 centimeters
         # generator for noise
         self._ADD_NOISE = True
+        self._noise_dev_m = 0.03 # 30 centimeters
         self._noise_generator = Generator(PCG64(time.time_ns()))
         # made this up, should be close to real speed
         self._SPEED = 1.73 # meters per second
@@ -211,8 +232,8 @@ class MockedGPSInterface(GPSInterface):
         self._real_bearing += bearing_change * dt
 
         # take the distance traveled and bearing and figure out change in lat and long
-        d_lat = cos(self._real_bearing) * Location.meters_to_degrees(distance_traveled)
-        d_lon = sin(self._real_bearing) * Location.meters_to_degrees(distance_traveled)
+        d_lat = cos(self._real_bearing) * meters_to_degrees(distance_traveled)
+        d_lon = sin(self._real_bearing) * meters_to_degrees(distance_traveled)
         self._real_lat += d_lat
         self._real_lon += d_lon
 
@@ -222,7 +243,7 @@ class MockedGPSInterface(GPSInterface):
     def get_real_bearing(self) -> float:
         return self._real_bearing
 
-    def _update_fields_loop(self):
+    def _update_fields_loop(self) -> None:
         """
         Updates the GPS fields repeatedly
         """
@@ -234,7 +255,7 @@ class MockedGPSInterface(GPSInterface):
             # update the real position
             if self._ADD_NOISE:
                 # if noise is enabled, add noise to the real position
-                noise_dev_deg = Location.meters_to_degrees(self._noise_dev_m)
+                noise_dev_deg = meters_to_degrees(self._noise_dev_m)
                 self.latitude = self._real_lat + self._noise_generator.normal(0, noise_dev_deg)
                 self.longitude = self._real_lon + self._noise_generator.normal(0, noise_dev_deg)
             else:
@@ -244,4 +265,4 @@ class MockedGPSInterface(GPSInterface):
 
             # update the bearing
             self.bearing = self.calc_avg_bearing(self.old_latitude, self.old_longitude, self.latitude, self.longitude)
-            sleep(self._update_period)
+            sleep(self._UPDATE_PERIOD)
