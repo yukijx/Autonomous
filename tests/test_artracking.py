@@ -2,7 +2,7 @@ import pytest
 import cv2
 import numpy as np
 from time import sleep
-from libs.ARTracker import ARTracker
+from libs.ObjectTracker import ObjectTracker
 from libs.Camera import MockedCamera
 
 ARUCO_DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
@@ -24,7 +24,7 @@ def mocked_camera():
 
 # @pytest.fixture
 def ar_tracker():
-    tracker = ARTracker()
+    tracker = ObjectTracker()
     tracker.set_parameters(PARAMS)
     tracker.set_markers_to_track([0, 1])
     return tracker

@@ -29,6 +29,8 @@ class Simulation:
 
         self.gps_measurements = []
         self.gps_targets = []
+        self.aruco_markers = []
+        self.ARUCO_SIZE = 0.02 # 20 cm
 
         self.rover = MockedRover()
         self.rover.start_wheels('',0)
@@ -43,6 +45,15 @@ class Simulation:
         # target_pos_m.append((-50, 0))
         self.gps_targets = [tuple([meters_to_degrees(x) for x in t]) for t in target_pos_m]
     
+    def create_aruco_targets(self, num):
+        target_pos_m = []
+        spread = 200
+        for _ in range(num):
+            target_pos_m.append((spread//2-random.random()*spread, spread//2-random.random()*spread))
+        target_pos_deg = [tuple([meters_to_degrees(x) for x in t]) for t in target_pos_m]
+        indices = list(range(len(target_pos_deg)))
+        self.aruco_markers = [(ind, pos) for ind, pos in zip(indices, target_pos_deg)]
+
     def start(self):
         self.rover.start_navigation(self.gps_targets)
 

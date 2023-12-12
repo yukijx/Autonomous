@@ -1,10 +1,13 @@
 import cv2
 import cv2.aruco as aruco
-from numpy import angle
+import numpy as np
 from libs.Camera import Camera
+from libs.utilities import get_marker_location, get_coordinates
+from libs.GPSInterface import GPSInterface
 from time import sleep, time
 import threading
 import os
+from enum import Enum
 
 '''
 darknetPath = os.path.dirname(os.path.abspath(__file__)) + '/../YOLO/darknet/'
@@ -13,35 +16,29 @@ from darknet_images import *
 from darknet import load_network
 '''
 
-class ARTracker:
+class ObjectTracker:
 
     # Constructor
     #Cameras should be a list of file paths to cameras that are to be used
     #set write to True to write to disk what the cameras are seeing
     #set useYOLO to True to use yolo when attempting to detect the ar tags
-    def __init__(self, save_to_disk=False, use_yolo = False):
+    def __init__(self, gps: GPSInterface, save_to_disk=False, use_yolo = False):
         self._save_to_disk=save_to_disk
-        self.markers_to_track = []
-        self.marker_locations = {}
         self._use_yolo = use_yolo
+        self._gps = gps
+
+        self.markers_to_track = []
+        self.tracked_objects = {}
 
         # Set the ar marker dictionary
         self._marker_dict = aruco.getPredefinedDictionary(aruco.DICT_4X4_50)
 
+        self._marker_mode = True
         self._running = False
         self._last_frame = None
-        self._marker_found = False
         self._thread = threading.Thread(target=self._tracking_loop, name='AR search')
 
-        self._degrees_per_pixel = 0.09375
-        self._v_degrees_per_pixel = .125
-        self._focal_length = 435
-        self._focal_length_30_h = 590
-        self._focal_length_30_v = 470
-        self._known_marker_width = 20
-        self._format = 'MJPG'
-        self._frame_width = 640
-        self._frame_height = 480
+        self._known_marker_width = 0.020
 
         # sets up yolo
         # if use_YOLO:
@@ -82,25 +79,21 @@ class ARTracker:
     def set_markers_to_track(self, markers: "list[int]"):
         self.markers_to_track = markers
 
-    def set_parameters(self, config: dict):
-        self._degrees_per_pixel = float(config['DEGREES_PER_PIXEL'])
-        self._v_degrees_per_pixel = float(config['VDEGREES_PER_PIXEL'])
-        self._focal_length = float(config['FOCAL_LENGTH'])
-        self._focal_length_30_h = float(config['FOCAL_LENGTH30H'])
-        self._focal_length_30_v = float(config['FOCAL_LENGTH30V'])
-        self._known_marker_width = float(config['KNOWN_TAG_WIDTH'])
-        self._format = config['FORMAT']
-        self._frame_width = int(config['FRAME_WIDTH'])
-        self._frame_height = int(config['FRAME_HEIGHT'])
+    def any_targets_found(self):
+        for marker_id in self.markers_to_track:
+            if self.tracked_objects.get(marker_id) is not None:
+                return True
 
     def _tracking_loop(self):
         while self._running:
             frame = self.camera.get_frame()
             if frame is not None and frame is not self._last_frame:
                 self._last_frame = frame
-                self._search_for_markers(frame)
+                intrinsic = self.camera.get_intrinsic()
+                distortion = self.camera.get_distortion()
+                self._search_for_markers(frame, intrinsic, distortion)
     
-    def _search_for_markers(self, frame):
+    def _search_for_markers(self, frame: np.ndarray, intrinsic: np.ndarray, distortion: np.ndarray):
         print('searching for markers')
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
         corners, marker_ids, _ = aruco.detectMarkers(frame, self._marker_dict)
@@ -109,40 +102,14 @@ class ARTracker:
                 if marker_id[0] in self.markers_to_track:
                     print('found marker', marker_id[0])
                     self._marker_found = True
-                    angle, distance = self._get_marker_location(corner[0])
+                    angle, distance = get_marker_location(corner[0], self.marker_siize, intrinsic, distortion)
                     print(angle, distance)
-                    self.marker_locations[marker_id[0]] = (angle, distance, time())
+                    if self.tracked_objects.get(marker_id[0]) is None:
+                        self.tracked_objects[marker_id[0]] = TrackedObject()
+                    rover_lat, rover_lon = self._gps.get_position()
+                    measured_coord = get_coordinates(rover_lat, rover_lon, angle, distance)
+                    self.tracked_objects[marker_id[0]].update(measured_coord)
             
-    def _get_marker_location(self, marker_pos):
-        center_x = (marker_pos[0][0] + marker_pos[1][0] + \
-            marker_pos[2][0] + marker_pos[3][0]) / 4
-        
-        # takes the pixels from the marker to the center of the image and multiplies it by the degrees per pixel
-        angle_to_marker = self._degrees_per_pixel * (center_x - self._frame_width/2)
-
-        '''
-        distanceToAR = (knownWidthOfMarker(20cm) * focalLengthOfCamera) / pixelWidthOfMarker
-        focalLength = focal length at 0 degrees horizontal and 0 degrees vertical
-        focalLength30H = focal length at 30 degreees horizontal and 0 degrees vertical
-        focalLength30V = focal length at 30 degrees vertical and 0 degrees horizontal
-        realFocalLength of camera = focalLength 
-                                    + (horizontal angle to marker/30) * (focalLength30H - focalLength)
-                                    + (vertical angle to marker / 30) * (focalLength30V - focalLength)
-        If focalLength30H and focalLength30V both equal focalLength then realFocalLength = focalLength which is good for non huddly cameras
-        Please note that the realFocalLength calculation is an approximation that could be much better if anyone wants to try to come up with something better
-        '''
-        h_angle_to_marker = abs(angle_to_marker)
-        center_y_marker = (marker_pos[0][1] + marker_pos[1][1] + \
-            marker_pos[2][1] + marker_pos[3][1]) / 4
-        v_angle_to_marker = abs(self._v_degrees_per_pixel * (center_y_marker - self._frame_height/2))
-        real_focal_length = self._focal_length + (h_angle_to_marker/30) * (self._focal_length_30_h - self._focal_length) + \
-            (v_angle_to_marker/30) * (self._focal_length_30_v - self._focal_length)
-        width_of_marker = ((marker_pos[1][0] - marker_pos[0][0]) + \
-            (marker_pos[2][0] - marker_pos[3][0])) / 2
-        distance_to_marker = (self._known_marker_width * real_focal_length) / width_of_marker 
-
-        return angle_to_marker, distance_to_marker
-        
     #helper method to convert YOLO detections into the aruco corners format
     # def _convert_to_corners(self, detections, num_corners):
     #     corners = []
@@ -294,3 +261,38 @@ class ARTracker:
         #     self.distance_to_marker = (distanceToMarker1 + distanceToMarker2) / 2
     
         # return True 
+
+
+class TrackedObject:
+    def __init__(self):
+        self._MAX_ESTIMATES = 50
+        self._position_estimates = []
+        self._position_estimate_length = 0
+        self._position_estimate_index = 0
+        self._last_update_time = None
+
+    def get_position(self):
+        avg_lat = sum([x[0] for x in self._position_estimates]) / len(self._position_estimates)
+        avg_lon = sum([x[1] for x in self._position_estimates]) / len(self._position_estimates)
+        return (avg_lat, avg_lon)
+    
+    def update(self, position):
+        self._last_update_time = time.time()
+        if self._position_estimate_length < self._MAX_ESTIMATES:
+            self._position_estimates.append(position)
+            self._position_estimate_length += 1
+        else:
+            self._position_estimates[self._position_estimate_index] = position
+            self._position_estimate_index = (self._position_estimate_index + 1) % self._position_estimate_length
+
+    def get_last_update_time(self):
+        return self._last_update_time
+    
+    def get_last_position(self):
+        return self._position_estimates[-1]
+    
+    def clear_estimates(self):
+        self._position_estimates = []
+        self._position_estimate_length = 0
+        self._position_estimate_index = 0
+        self._last_update_time = None

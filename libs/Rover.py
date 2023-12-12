@@ -1,10 +1,7 @@
-import threading
-from configparser import ConfigParser
-
-from libs.ARTracker import ARTracker
+from libs.ObjectTracker import ObjectTracker
 from libs.Wheels import WheelInterface, MockedWheelInterface
 from libs.GPSInterface import GPSInterface, MockedGPSInterface
-from libs.Drive import Navigation
+from libs.Navigation import Navigation
 from libs.Lights import Lights
 
 class Rover:
@@ -12,7 +9,7 @@ class Rover:
         self._gps = GPSInterface()
         self._wheels = WheelInterface()
         self._lights = Lights()
-        self._ar = ARTracker()
+        self._ar = ObjectTracker(self._gps)
         self._navigation = Navigation(self._gps, self._wheels, self._ar, self._lights)
 
     def __del__(self):

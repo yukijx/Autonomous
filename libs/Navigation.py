@@ -1,5 +1,4 @@
 from threading import Thread
-from threading import Timer
 import os
 
 from numpy import sign
@@ -8,20 +7,15 @@ from libs.Wheels import WheelInterface
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 import math
 from time import sleep
-from nis import maps
-
-import sys
-sys.path.append('../../Mission Control/RoverMap/')
-
 from libs.utilities import abs_clamp
 from libs.GPSInterface import GPSInterface
 from libs.Wheels import WheelInterface
-from libs.ARTracker import ARTracker
+from libs.ObjectTracker import ObjectTracker
 from libs.Lights import Lights
 
 class Navigation:
     
-    def __init__(self, gps: GPSInterface, wheels: WheelInterface, tracker: ARTracker, lights: Lights):
+    def __init__(self, gps: GPSInterface, wheels: WheelInterface, tracker: ObjectTracker, lights: Lights):
         self.base_speed = .5
 
         self._gps = gps
@@ -29,16 +23,13 @@ class Navigation:
         self._tracker = tracker
         self._lights = lights
         
-        #Starts everything needed by the map
-        # self.mapServer = MapServer()
-        # self.mapServer.register_routes()
-        # self.mapServer.start(debug=False)
-        # self.startMap(self.updateMap, .5)
-        # sleep(.1)
-
         self._accumulated_error = 0.0
 
-        self._wait_period = .05
+        self._WAIT_PERIOD = .05
+        self._MAX_SPEED = 0.9
+        self._MIN_SPEED = 0.1
+        self._REVERSE_WHEEL_MODIFIER = 0.7
+        self._MAX_BEARING_ERROR = 200
         
         #starts the thread that sends wheel speeds
         self._running = False
@@ -70,13 +61,13 @@ class Navigation:
         self._accumulated_error = 0
         while self._running and self._gps.distance_to(lat, lon) > .0025:
             self._bearing_to = self._gps.bearing_to(lat, lon)
-            self._calc_speeds = self.calculate_speeds(.8, self._bearing_to, self._wait_period , kp=.0165, ki=.002)
+            self._calc_speeds = self.calculate_speeds(.8, self._bearing_to, self._WAIT_PERIOD , kp=.0165, ki=.002)
             self._wheels.set_wheel_speeds(*self._calc_speeds)
             dist = self._gps.distance_to(lat, lon) * 1000
 
             self.print_info(dist)
 
-            sleep(self._wait_period)
+            sleep(self._WAIT_PERIOD)
 
         self._wheels.set_wheel_speeds(0, 0)
 
@@ -88,17 +79,6 @@ class Navigation:
         print('left speed       {0: 3.2f}'.format(self._calc_speeds[0]*100))
         print('right speed      {0: 3.2f}'.format(self._calc_speeds[1]*100))
         print()
-
-    # def startMap(self, func, seconds):
-    #     def func_wrapper():
-    #         self.startMap(func, seconds)
-    #         func()
-    #     t = Timer(seconds, func_wrapper)
-    #     t.start()
-    #     return t
-
-    # def updateMap(self):
-    #     self.mapServer.update_rover_coords([self.gps.latitude, self.gps.longitude])
 
     def calculate_speeds(self, speed, bearing_error, time, kp = .35, ki=.000035):
         """
@@ -126,27 +106,26 @@ class Navigation:
 
         #Updates the error accumulation
         self._accumulated_error += bearing_error * time
-        self._accumulated_error = abs_clamp(self._accumulated_error, -200, 200)
+        self._accumulated_error = abs_clamp(self._accumulated_error, -self._MAX_BEARING_ERROR, self._MAX_BEARING_ERROR)
 
         #Gets the adjusted speed values
         left_speed = speed + (bearing_error * kp + self._accumulated_error * ki)
         right_speed = speed - (bearing_error * kp + self._accumulated_error * ki)
 
-        min_speed = .1
-        max_speed = .9
 
         # print('getspeed', left_speed, right_speed)
 
         # Makes sure the speeds are within the min and max
-        left_speed = abs_clamp(left_speed, min_speed, max_speed)
-        right_speed = abs_clamp(right_speed, min_speed, max_speed)
-
+        left_speed = abs_clamp(left_speed, self._MIN_SPEED, self._MAX_SPEED)
+        right_speed = abs_clamp(right_speed, self._MIN_SPEED, self._MAX_SPEED)
+        
         # prevents complete pivots
-        if abs(left_speed - right_speed) > max_speed * 2 - .2:
+        # the side that is going backwards is slowed down
+        if abs(left_speed - right_speed) > self._MAX_SPEED * 2 - .2:
             if sign(left_speed) > 0:
-                right_speed += abs(right_speed) * .2
+                right_speed += abs(right_speed) * (1-self._REVERSE_WHEEL_MODIFIER)
             else:
-                left_speed += abs(left_speed) * .2
+                left_speed += abs(left_speed) * (1-self._REVERSE_WHEEL_MODIFIER)
 
         return (left_speed, right_speed)
     
