@@ -1,6 +1,7 @@
 import pygame
 from math import sin, cos, pi
 from pygame.locals import *
+from pygame.camera import Camera
 
 import random
 

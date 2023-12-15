@@ -92,10 +92,8 @@ class MockedCamera(Camera):
             self._running = True
             self._cap_thread.start()
 
-    def generate_frame(self):
-        rover_pos = self._simulation.rover._gps.get_real_position()
-        rover_bearing = self._simulation.rover._gps.get_real_bearing()
-        aruco_markers = self._simulation.aruco_markers
+    def generate_frame(self, rover_pos, rover_bearing, aruco_markers):
+        pass
 
     def _cap_loop(self):
         while self._running:

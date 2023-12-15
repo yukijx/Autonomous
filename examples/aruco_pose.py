@@ -14,7 +14,7 @@ ARUCO_SIZE = 0.086 # 200mm
 def main():
     intrinsic = np.load('calibration_matrix.npy')
     distortion = np.load('distortion_coefficients.npy')
-    camera = Camera(0, 1920, 1080, 'MJPG')
+    camera = Camera(0, 1920, 1080, 30, 'MJPG')
     camera.start()
     # artracker = ARTracker()
     last_frame = None

@@ -82,7 +82,7 @@ def main():
     camera_id = args['camera']
     name = args['name']
 
-    camera = Camera(camera_id, width, height, 'MJPG')
+    camera = Camera(camera_id, width, height, 30, 'MJPG')
     camera.start()
     camera.set_property(cv2.CAP_PROP_BRIGHTNESS, brightness)
     last_frame = None

@@ -82,7 +82,7 @@ class GPSInterface:
         self.time = 0 # seconds (? not sure about this either)
         self.error = 0 # meters (? this needs to be checked)
         self.bearing = 0.0 # degrees
-        self.running = True
+        self._running = True
         self._UPDATE_PERIOD = .25 # seconds
 
         # create a circular queue of average bearings
@@ -138,20 +138,21 @@ class GPSInterface:
         """
         self.swift_ip = ip
         self.swift_port = port
-        gps.gps_init(self.swift_ip, self.swift_port)
-        self.running = True
-        self._thread = Thread(target=self._update_fields_loop, name=(
-                'update GPS fields'), args=())
-        self._thread.daemon = True
-        self._thread.start()
+        if not self._running:
+            gps.gps_init(self.swift_ip, self.swift_port)
+            self._running = True
+            self._thread = Thread(target=self._update_fields_loop, name=(
+                    'update GPS fields'), args=())
+            self._thread.start()
 
     def stop(self):
         """
         Stops the GPS
         """
-        self.running = False
-        self._thread.join()
-        gps.gps_finish()
+        if self._running:
+            self._running = False
+            self._thread.join()
+            gps.gps_finish()
 
     def calc_avg_bearing(self, lat1, lon1, lat2, lon2):
         """
@@ -181,7 +182,7 @@ class GPSInterface:
         """
         Updates the GPS fields repeatedly
         """
-        while(self.running):
+        while(self._running):
             if gps.get_latitude() != 0 or gps.get_longitude() != 0:
                 self.old_latitude = self.latitude
                 self.old_longitude = self.longitude
@@ -247,7 +248,7 @@ class MockedGPSInterface(GPSInterface):
         """
         Updates the GPS fields repeatedly
         """
-        while(self.running):
+        while(self._running):
             # remember old lat and long
             self.old_latitude = self.latitude
             self.old_longitude = self.longitude
