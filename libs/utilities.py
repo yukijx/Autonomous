@@ -184,7 +184,7 @@ def get_coordinates(lat: float, lon: float, distance: float, bearing: float) -> 
 
 def degrees_to_meters(degrees: float) -> float:
     """
-    Converts degrees to meters
+    Converts degrees to meters (Spherical Earth model)
 
     Args:
         degrees (float): Degrees to convert
@@ -196,7 +196,7 @@ def degrees_to_meters(degrees: float) -> float:
 
 def meters_to_degrees(meters: float) -> float:
     """
-    Converts meters to degrees
+    Converts meters to degrees (Spherical Earth model)
 
     Args:
         meters (float): Meters to convert

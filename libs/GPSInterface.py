@@ -82,12 +82,15 @@ class GPSInterface:
         self.time = 0 # seconds (? not sure about this either)
         self.error = 0 # meters (? this needs to be checked)
         self.bearing = 0.0 # degrees
-        self._running = True
+        self._running = False
         self._UPDATE_PERIOD = .25 # seconds
+
+        self._thread = Thread(target=self._update_fields_loop, name=(
+                'update GPS fields'), args=())
 
         # create a circular queue of average bearings
         # to smooth out some noise
-        self._AVERAGE_BEARING_LENGTH = 4
+        self._AVERAGE_BEARING_LENGTH = 6
         self._average_bearing = [0] * self._AVERAGE_BEARING_LENGTH
         self._average_bearing_index = 0
 
@@ -141,8 +144,6 @@ class GPSInterface:
         if not self._running:
             gps.gps_init(self.swift_ip, self.swift_port)
             self._running = True
-            self._thread = Thread(target=self._update_fields_loop, name=(
-                    'update GPS fields'), args=())
             self._thread.start()
 
     def stop(self):
@@ -154,7 +155,7 @@ class GPSInterface:
             self._thread.join()
             gps.gps_finish()
 
-    def calc_avg_bearing(self, lat1, lon1, lat2, lon2):
+    def _calc_avg_bearing(self, lat1, lon1, lat2, lon2):
         """
         Calculates bearing between two points while updating and
         using running average of bearings recorded in a circular queue
@@ -192,7 +193,7 @@ class GPSInterface:
                 self.height = gps.get_height()
                 self.time = gps.get_time()
                 self.error = gps.get_error()
-                self.bearing = self.calc_avg_bearing(self.old_latitude, self.old_longitude, self.latitude, self.longitude)
+                self.bearing = self._calc_avg_bearing(self.old_latitude, self.old_longitude, self.latitude, self.longitude)
             else:
                 pass
             # maybe print info or sleep or something idk
@@ -265,5 +266,5 @@ class MockedGPSInterface(GPSInterface):
                 self.longitude = self._real_lon
 
             # update the bearing
-            self.bearing = self.calc_avg_bearing(self.old_latitude, self.old_longitude, self.latitude, self.longitude)
+            self.bearing = self._calc_avg_bearing(self.old_latitude, self.old_longitude, self.latitude, self.longitude)
             sleep(self._UPDATE_PERIOD)

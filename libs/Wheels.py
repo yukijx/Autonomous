@@ -8,18 +8,20 @@ class WheelInterface:
         self._MESSAGE_TYPE = 0x00
         self._SEND_PERIOD = 0.1
         self._TIMEOUT = 3.0
+        self._running = False
         self._speeds = [0, 0]
         self._last_received = time()
         self._lock = threading.Lock()
+        self._thread = threading.Thread(target=self._update_loop, name=(
+            'update wheel speeds'), args=())
+
 
     def start(self, ip, port):
         self._ip = ip
         self._port = port
-        self._running = True
-        self._thread = threading.Thread(target=self._update_loop, name=(
-            'update wheel speeds'), args=())
-        self._thread.daemon = True
-        self._thread.start()
+        if not self._running:
+            self._running = True
+            self._thread.start()
 
     def stop(self):
         if self._running:
@@ -27,8 +29,8 @@ class WheelInterface:
             self._thread.join()
 
     def set_wheel_speeds(self, left, right):
+        self._last_received = time()
         with self._lock:
-            self._last_received = time()
             self._speeds = [left, right]
     
     def get_wheel_speeds(self):

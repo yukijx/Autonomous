@@ -5,20 +5,34 @@ from libs.Camera import Camera
 from libs.ObjectTracker import ObjectTracker
 from libs.utilities import get_marker_location
 from time import perf_counter_ns
+import signal
+
+running = True
+
+def signal_handler(sig, frame):
+    print('Exiting...')
+    global running
+    running = False
+signal.signal(signal.SIGINT, signal_handler)
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 ARUCO_DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-ARUCO_SIZE = 0.086 # 200mm
+ARUCO_SIZE = 0.10 # 200mm
+
+CAMERA_INDEX = 4
+WIDTH = 1920
+HEIGHT = 1080
+CAMERA_NAME = 'papalook'
 
 def main():
-    intrinsic = np.load('calibration_matrix.npy')
-    distortion = np.load('distortion_coefficients.npy')
-    camera = Camera(0, 1920, 1080, 30, 'MJPG')
+    intrinsic = np.load(f'../tools/{CAMERA_NAME}_{WIDTH}_{HEIGHT}_intrinsic.npy')
+    distortion = np.load(f'../tools/{CAMERA_NAME}_{WIDTH}_{HEIGHT}_distortion.npy')
+    camera = Camera(CAMERA_INDEX, WIDTH, HEIGHT, 30, 'MJPG')
     camera.start()
     # artracker = ARTracker()
     last_frame = None
-    while True:
+    while running:
         start = perf_counter_ns()
         frame = camera.get_frame()
         if frame is not None and frame is not last_frame:

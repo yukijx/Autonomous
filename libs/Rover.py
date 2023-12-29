@@ -20,7 +20,6 @@ class Rover:
         self._gps.stop()
         self._wheels.stop()
         self._lights.stop()
-        self._wheels.stop()
 
     def start_gps(self, ip, port):
         self._gps.start(ip, port)
@@ -36,9 +35,6 @@ class Rover:
 
     def add_ar_marker(self, id):
         pass
-
-    # def drive_to(self, lat, lon):
-    #     self._navigation.start(lat, lon)
 
     def halt(self):
         # self._drive.halt()

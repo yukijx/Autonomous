@@ -9,7 +9,7 @@ class Lights:
         self._found_event = threading.Event()
         self._running = False
         self.current_color = 'o'
-        self._thread = threading.Thread(target=self._update_lights, args=(self._found_event,))
+        self._thread = threading.Thread(target=self._update_lights, name="Update Lights", args=(self._found_event,))
 
     def _update_lights(self, event: threading.Event) -> None:
         while self._running:
