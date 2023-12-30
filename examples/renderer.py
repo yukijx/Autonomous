@@ -394,8 +394,12 @@ class Renderer:
         glutInitWindowSize(self._width, self._height)
         glutCreateWindow("Camera Render")
         glutDisplayFunc(self._draw)
+        glutReshapeFunc(self._reshape_func)
         if self._hide_window:
             glutHideWindow()
+
+    def _reshape_func(self, width, height):
+        glutReshapeWindow(self._width, self._height)
 
     def _init_opengl(self):
         glEnable(GL_DEPTH_TEST)

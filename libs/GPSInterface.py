@@ -94,6 +94,20 @@ class GPSInterface:
         self._average_bearing = [0] * self._AVERAGE_BEARING_LENGTH
         self._average_bearing_index = 0
 
+    def configure(self, config):
+        """
+        Configures the GPS
+
+        Args:
+            config (dict): Dictionary of config values
+        """
+        self._UPDATE_PERIOD = float(config['GPS_UPDATE_PERIOD'])
+        bearing_length = int(config['BEARING_LIST_LENGTH'])
+        if bearing_length != self._AVERAGE_BEARING_LENGTH:
+            self._AVERAGE_BEARING_LENGTH = bearing_length
+            self._average_bearing = [0] * self._AVERAGE_BEARING_LENGTH
+            self._average_bearing_index = 0
+
     def get_position(self):
         """
         Returns current latitude and longitude
@@ -209,6 +223,21 @@ class GPSInterface:
             sleep(self._UPDATE_PERIOD)
 
 class MockedGPSInterface(GPSInterface):
+    """
+    Mocked GPS interface for testing. Allows the wheels to be used as an 
+    input for the GPS to simulate traversal for testing without the rover.
+
+    Attributes:
+        _wheels (WheelInterface): Wheel interface to get wheel speeds from
+        _real_lat (float): Real latitude
+        _real_lon (float): Real longitude
+        _real_bearing (float): Real bearing
+        _ADD_NOISE (bool): Whether to add noise to the real position
+        _noise_dev_m (float): Standard deviation of noise in meters
+        _noise_generator (Generator): Generator for noise
+        _SPEED (float): Speed of the rover in meters per second
+        _single_side_authority (float): How much the rover turns when one wheel is at full speed and the other is stopped
+    """
     def __init__(self, wheels: WheelInterface):
         super().__init__()
         self._wheels = wheels

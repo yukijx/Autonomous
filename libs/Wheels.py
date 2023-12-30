@@ -15,6 +15,9 @@ class WheelInterface:
         self._thread = threading.Thread(target=self._update_loop, name=(
             'update wheel speeds'), args=())
 
+    def configure(self, config):
+        self._SEND_PERIOD = float(config['WHEEL_UPDATE_PERIOD'])
+        self._TIMEOUT = float(config['WHEEL_TIMEOUT'])
 
     def start(self, ip, port):
         self._ip = ip

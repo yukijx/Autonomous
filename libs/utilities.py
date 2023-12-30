@@ -1,8 +1,11 @@
 from math import cos, radians, degrees, sin, atan2, pi, sqrt, asin
 import numpy as np
+import os
 import cv2
 import socket
+from typing import Dict
 from argparse import ArgumentParser
+from configparser import ConfigParser
 
 def get_marker_location(corners, marker_size, intrinsic, distortion):
     rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(corners, marker_size, intrinsic, distortion)
@@ -91,6 +94,43 @@ def parse_latlong_file(filename) -> list:
                 locations.append(coords)
 
     return locations
+
+def parse_config_file(filename) -> Dict[str, Dict[str, str]]:
+    """
+    Parses a config file
+    
+    Args:
+        filename (str): Name of file to parse
+        
+    Returns:
+        dict[str, dict[str, str]]: Dictionary of config values with the top
+        level keys being the section names and the second level keys
+        being the config values
+    """
+    config = ConfigParser()
+    config.read(filename)
+    return {section: {entry.upper(): val for entry,val in config[section].items()} for section in config.sections()}
+
+def get_camera_matrices(name, width, height) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Gets the intrinsic and distortion matrices from a calibration file
+    
+    Args:
+        cwd (str): Current working directory
+        name (str): Name of camera
+        width (int): Width of camera
+        height (int): Height of camera
+        
+    Returns:
+        tuple[np.ndarray, np.darray]: Intrinsic and distortion matrices
+    """
+    cwd = os.getcwd()
+    ind = cwd.find('Autonomous')
+    cwd = cwd[:ind+11]
+    # get the intrinsic and distortion matrices from a calibration file
+    intrinsic = np.load(f'{cwd}/cfg/{name}_{width}_{height}_intrinsic.npy')
+    distortion = np.load(f'{cwd}/cfg/{name}_{width}_{height}_distortion.npy')
+    return intrinsic, distortion
 
 def calc_average_bearing(bearings: list) -> float:
     """
@@ -205,3 +245,8 @@ def meters_to_degrees(meters: float) -> float:
         float: Degrees
     """
     return meters / 111139
+
+if __name__ == "__main__":
+    print("This is a library, not a script.")
+    cfg = parse_config_file("/home/benton/Documents/code/Autonomous/cfg/config.ini")
+    print(cfg)

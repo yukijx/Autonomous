@@ -22,6 +22,12 @@ class Rover:
         self._lights.stop()
         self._object_tracker.stop()
 
+    def configure(self, config):
+        self._gps.configure(config['GPS'])
+        self._wheels.configure(config['WHEELS'])
+        self._object_tracker.configure(config['TRACKER'])
+        self._navigation.configure(config['NAVIGATION'])
+
     def start_gps(self, ip, port):
         self._gps.start(ip, port)
 
