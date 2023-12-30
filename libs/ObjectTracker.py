@@ -2,7 +2,7 @@ import cv2
 import cv2.aruco as aruco
 import numpy as np
 from libs.Camera import Camera
-from libs.utilities import get_marker_location, get_coordinates
+from libs.utilities import get_marker_location, get_coordinates, degrees_to_meters
 from libs.GPSInterface import GPSInterface
 from time import sleep, time
 import threading
@@ -32,6 +32,9 @@ class ObjectTracker:
 
         # Set the ar marker dictionary
         self._marker_dict = aruco.getPredefinedDictionary(aruco.DICT_4X4_50)
+
+        self._show_frames = False
+        self._processed_frame = None
 
         self._marker_mode = True
         self._running = False
@@ -83,6 +86,17 @@ class ObjectTracker:
         for marker_id in self.markers_to_track:
             if self.tracked_objects.get(marker_id) is not None:
                 return True
+            
+    def get_closest_target(self):
+        closest_marker = None
+        closest_distance = 999999999
+        for marker_id in self.markers_to_track:
+            if self.tracked_objects.get(marker_id) is not None:
+                _, distance = self.tracked_objects[marker_id].get_last_position()
+                if distance < closest_distance:
+                    closest_distance = distance
+                    closest_marker = marker_id
+        return self.tracked_objects[closest_marker]
 
     def _tracking_loop(self):
         while self._running:
@@ -92,6 +106,7 @@ class ObjectTracker:
                 intrinsic = self.camera.get_intrinsic()
                 distortion = self.camera.get_distortion()
                 self._search_for_markers(frame, intrinsic, distortion)
+
     
     def _search_for_markers(self, frame: np.ndarray, intrinsic: np.ndarray, distortion: np.ndarray):
         print('searching for markers')
@@ -102,13 +117,24 @@ class ObjectTracker:
                 if marker_id[0] in self.markers_to_track:
                     print('found marker', marker_id[0])
                     self._marker_found = True
-                    angle, distance = get_marker_location(corner[0], self.marker_siize, intrinsic, distortion)
-                    print(angle, distance)
+                    angle, distance = get_marker_location(corner, self._known_marker_width, intrinsic, distortion)
+                    print('ad', angle, distance)
                     if self.tracked_objects.get(marker_id[0]) is None:
                         self.tracked_objects[marker_id[0]] = TrackedObject()
                     rover_lat, rover_lon = self._gps.get_position()
-                    measured_coord = get_coordinates(rover_lat, rover_lon, angle, distance)
-                    self.tracked_objects[marker_id[0]].update(measured_coord)
+                    rover_bearing = self._gps.get_bearing()
+                    measured_coord = get_coordinates(rover_lat, rover_lon, distance/1000, rover_bearing + angle)
+                    mc_lat, mc_lon = measured_coord
+                    mc_lat_m = degrees_to_meters(mc_lat)
+                    mc_lon_m = degrees_to_meters(mc_lon)
+                    rover_lat_m = degrees_to_meters(rover_lat)
+                    rover_lon_m = degrees_to_meters(rover_lon)
+                    print('rover', rover_lat_m, rover_lon_m)
+                    print('distance', distance)
+                    print('mc', mc_lat_m, mc_lon_m)
+                    self.tracked_objects[marker_id[0]].update(measured_coord, distance)
+            if self._show_frames:
+                self._processed_frame = cv2.aruco.drawDetectedMarkers(frame, corners, marker_ids)
             
     #helper method to convert YOLO detections into the aruco corners format
     # def _convert_to_corners(self, detections, num_corners):
@@ -265,31 +291,32 @@ class ObjectTracker:
 
 class TrackedObject:
     def __init__(self):
-        self._MAX_ESTIMATES = 50
+        self._MAX_ESTIMATES = 10
         self._position_estimates = []
         self._position_estimate_length = 0
         self._position_estimate_index = 0
         self._last_update_time = None
 
     def get_position(self):
-        avg_lat = sum([x[0] for x in self._position_estimates]) / len(self._position_estimates)
-        avg_lon = sum([x[1] for x in self._position_estimates]) / len(self._position_estimates)
+        avg_lat = sum([x[0][0] for x in self._position_estimates]) / len(self._position_estimates)
+        avg_lon = sum([x[0][1] for x in self._position_estimates]) / len(self._position_estimates)
         return (avg_lat, avg_lon)
     
-    def update(self, position):
-        self._last_update_time = time.time()
+    def update(self, position, distance):
+        self._last_update_time = time()
         if self._position_estimate_length < self._MAX_ESTIMATES:
-            self._position_estimates.append(position)
+            self._position_estimates.append((position, distance))
             self._position_estimate_length += 1
         else:
-            self._position_estimates[self._position_estimate_index] = position
+            self._position_estimates[self._position_estimate_index] = (position, distance)
             self._position_estimate_index = (self._position_estimate_index + 1) % self._position_estimate_length
 
     def get_last_update_time(self):
         return self._last_update_time
     
     def get_last_position(self):
-        return self._position_estimates[-1]
+        last_index = (self._position_estimate_index - 1) % self._position_estimate_length
+        return self._position_estimates[last_index]
     
     def clear_estimates(self):
         self._position_estimates = []

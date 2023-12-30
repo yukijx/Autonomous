@@ -102,6 +102,15 @@ class GPSInterface:
             tuple: (latitude, longitude)
         """
         return (self.latitude, self.longitude)
+    
+    def get_bearing(self):
+        """
+        Returns current bearing
+
+        Returns:
+            float: Current bearing
+        """
+        return self.bearing
 
     def distance_to(self, lat:float, lon:float):
         """

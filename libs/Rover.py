@@ -9,8 +9,8 @@ class Rover:
         self._gps = GPSInterface()
         self._wheels = WheelInterface()
         self._lights = Lights()
-        self._ar = ObjectTracker(self._gps)
-        self._navigation = Navigation(self._gps, self._wheels, self._ar, self._lights)
+        self._object_tracker = ObjectTracker(self._gps)
+        self._navigation = Navigation(self._gps, self._wheels, self._object_tracker, self._lights)
 
     def __del__(self):
         self.stop()
@@ -20,6 +20,7 @@ class Rover:
         self._gps.stop()
         self._wheels.stop()
         self._lights.stop()
+        self._object_tracker.stop()
 
     def start_gps(self, ip, port):
         self._gps.start(ip, port)
@@ -33,8 +34,11 @@ class Rover:
     def start_navigation(self, coordinates):
         self._navigation.start(coordinates)
 
+    def start_tracking(self, camera):
+        self._object_tracker.start(camera)
+
     def add_ar_marker(self, id):
-        pass
+        self._object_tracker.set_markers_to_track([id])
 
     def halt(self):
         # self._drive.halt()
@@ -49,4 +53,5 @@ class MockedRover(Rover):
         super().__init__()
         self._wheels = MockedWheelInterface()
         self._gps = MockedGPSInterface(self._wheels)
-        self._navigation = Navigation(self._gps, self._wheels, self._ar, self._lights)
+        self._object_tracker = ObjectTracker(self._gps)
+        self._navigation = Navigation(self._gps, self._wheels, self._object_tracker, self._lights)

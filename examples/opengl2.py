@@ -1,13 +1,13 @@
 import numpy as np
-# import pygame
-# from pygame.locals import *
-import pyglet
 from OpenGL.GL import *
+from OpenGL.GLUT import *
+from threading import Thread, Lock
 import ctypes
 import cv2.aruco as aruco
 import cv2
 from math import sqrt
 import pyrr
+import time
 
 vertex_source = """
 #version 330 core
@@ -43,7 +43,7 @@ uniform sampler2D imageTexture;
 
 void main() {
     if (useTexture && fragmentTexCoord.s > 0.0) { 
-        color = texture(imageTexture, fragmentTexCoord);
+        color = fragmentColorCoord * texture(imageTexture, fragmentTexCoord);
     } else {
         color = fragmentColorCoord;
     }
@@ -119,8 +119,8 @@ class MarkerMesh:
         ], dtype=np.float32)
 
         stick_vertices = np.array(geometry_vertices, dtype=np.float32) * \
-            np.array([0.2, 3, 0.2], dtype=np.float32) - \
-            np.array([0, 3*box_size/2, 0], dtype=np.float32)
+            np.array([0.2, 6, 0.2], dtype=np.float32) - \
+            np.array([0, 3*box_size, 0], dtype=np.float32)
 
         color_vertices = np.array([
             [0.5, 1.0, 1.0, 1.0],
@@ -245,11 +245,40 @@ class MarkerObject:
         self._mesh.unbind()
         self._texture.unbind()
 
+class FloorTexture:
+    def __init__(self, texture_size):
+        self._texture_size = texture_size
+        self._texture = None
+        self._generate_texture()
+
+    def _generate_texture(self):
+        # create a random grid texture for the floor
+        grid = np.random.randint(0, 255, (self._texture_size, self._texture_size, 3), dtype=np.uint8)
+        grid = cv2.GaussianBlur(grid, (5, 5), 0)
+        grid = np.flipud(grid)
+        self._texture = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, self._texture)
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, self._texture_size, self._texture_size, 0, GL_RGB, GL_UNSIGNED_BYTE, grid)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+        glGenerateMipmap(GL_TEXTURE_2D)
+        glBindTexture(GL_TEXTURE_2D, 0)
+
+    def bind(self):
+        glBindTexture(GL_TEXTURE_2D, self._texture)
+
+    def unbind(self):
+        glBindTexture(GL_TEXTURE_2D, 0)
+
+
 class FloorObject:
     def __init__(self, size):
         self._size = size
         self._generate_mesh()
         self._position = np.array([0, 0, 0])
+        self._texture = FloorTexture(512)
 
 
     def _generate_mesh(self):
@@ -261,17 +290,17 @@ class FloorObject:
         ], dtype=np.float32)
 
         colors = np.array([
-            [0.3, 0.2, 0.2, 1.0],
-            [0.3, 0.2, 0.2, 1.0],
-            [0.3, 0.2, 0.2, 1.0],
-            [0.3, 0.2, 0.2, 1.0]
+            [0.4, 0.2, 0.2, 1.0],
+            [0.4, 0.2, 0.2, 1.0],
+            [0.4, 0.2, 0.2, 1.0],
+            [0.4, 0.2, 0.2, 1.0]
         ], dtype=np.float32)
 
         texture_coordinates = np.array([
-            [-0.1, 0.0],
-            [-0.1, 0.0],
-            [-0.1, 0.0],
-            [-0.1, 0.0],
+            [0.0, 0.0],
+            [5.0, 0.0],
+            [5.0, 5.0],
+            [0.0, 5.0],
         ], dtype=np.float32)
 
         vertices = np.concatenate((vertices, colors, texture_coordinates), axis=1).flatten()
@@ -294,6 +323,7 @@ class FloorObject:
         glBindVertexArray(0)
 
     def draw(self, shader):
+        self._texture.bind()
         glBindVertexArray(self._vao)
 
         model_matrix = pyrr.matrix44.create_identity(dtype=np.float32)
@@ -304,46 +334,68 @@ class FloorObject:
 
         glDrawArrays(GL_QUADS, 0, 4)
         glBindVertexArray(0)
+        self._texture.unbind()
         
 class Renderer:
-    def __init__(self, width, height):
+    def __init__(self, width, height, hide_window=False):
         self._width = width
         self._height = height
+        self._hide_window = hide_window
+        self._running = False
 
-        self.camera_position = np.array([1, 1, 0], dtype=np.float32)
-        self.camera_eulers = np.array([0, 0, 0], dtype=np.float32)
+        self._buffer_lock = Lock()
 
-        self._init_pygame()
+        self._camera_position = np.array([1, 1, 0], dtype=np.float32)
+        self._camera_eulers = np.array([0, 0, 0], dtype=np.float32)
+
+        self._frame = None
+
+        self._init_window()
         self._init_opengl()
 
-        self._floor = FloorObject(50)
+        self._floor = FloorObject(200)
         self._marker_objects = []
 
-    def start_loop(self):
-        self._loop()
+        self._render_thread = Thread(target=self._render_loop, name=(
+            'render'), args=())
+        
+
+    def start(self):
+        self._running = True
+        self._render_thread.start()
+
+    def stop(self):
+        self._running = False
+
+    def get_frame(self):
+        return self._frame
 
     def add_marker_object(self, marker_object):
         self._marker_objects.append(marker_object)
 
-    def set_position(self, position):
-        self.camera_position = position
+    def set_camera_position(self, lat, lon, alt):
+        self._camera_position = np.array([lon, alt, -lat], dtype=np.float32)
 
-    def set_rotation(self, theta):
-        self.camera_eulers[2] = np.deg2rad(theta)
+    def set_camera_rotation(self, theta):
+        self._camera_eulers[2] = -theta
 
-    def _init_pygame(self):
-        screen = pyglet.canvas.get_display().get_default_screen()
-        template = pyglet.gl.Config(double_buffer=True, depth_size=24)
-        try:
-            config = screen.get_best_config(template)
-        except pyglet.window.NoSuchConfigException:
-            template = pyglet.gl.Config()
-            config = screen.get_best_config(template)
+    def set_camera_matrix(self, intrinsic, distortion):
+        self._intrinsic = intrinsic
+        self._distortion = distortion
 
-        self._window = pyglet.window.Window(self._width, self._height, config=config)
-        self._window.set_location(0, 0)
-        self._window.set_caption('OpenGL')
-        self._window.set_mouse_visible(True)
+    def _render_loop(self):
+        while self._running:
+            glutMainLoopEvent()
+            self._draw()
+
+    def _init_window(self):
+        glutInit()
+        glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH)
+        glutInitWindowSize(self._width, self._height)
+        glutCreateWindow("Camera Render")
+        glutDisplayFunc(self._draw)
+        if self._hide_window:
+            glutHideWindow()
 
     def _init_opengl(self):
         glEnable(GL_DEPTH_TEST)
@@ -353,30 +405,22 @@ class Renderer:
 
         self.shader = create_shader(vertex_source, fragment_source)
 
-        self._projection = pyrr.matrix44.create_perspective_projection_matrix(45, self._width/self._height, 0.1, 50.0)
+        self._projection = pyrr.matrix44.create_perspective_projection_matrix(50, self._width/self._height, 0.1, 100.0)
         self._view = self._get_view_matrix()
 
         glUseProgram(self.shader)
-        glUniformMatrix4fv(glGetUniformLocation(self.shader, "projection"), 1, GL_FALSE, self._projection)
-        glUniformMatrix4fv(glGetUniformLocation(self.shader, "view"), 1, GL_FALSE, self._view)
+        self._view_location = glGetUniformLocation(self.shader, "view")
+        self._projection_location = glGetUniformLocation(self.shader, "projection")
+        glUniformMatrix4fv(self._projection_location, 1, GL_FALSE, self._projection)
+        glUniformMatrix4fv(self._view_location, 1, GL_FALSE, self._view)
         glUseProgram(0)
 
     def _get_view_matrix(self):
         view = pyrr.matrix44.create_identity()
-        view = pyrr.matrix44.multiply(view, pyrr.matrix44.create_from_translation(-self.camera_position, dtype=np.float32))
-        view = pyrr.matrix44.multiply(view, pyrr.matrix44.create_from_eulers(self.camera_eulers, dtype=np.float32))
+        view = pyrr.matrix44.multiply(view, pyrr.matrix44.create_from_translation(-self._camera_position, dtype=np.float32))
+        view = pyrr.matrix44.multiply(view, pyrr.matrix44.create_from_eulers(self._camera_eulers, dtype=np.float32))
         return view
 
-    def _handle_events(self):
-        pass
-        # for event in pygame.event.get():
-        #     if event.type == pygame.QUIT:
-        #         pygame.quit()
-        #         quit()
-        # keys = pygame.key.get_pressed()
-        # if keys[pygame.K_ESCAPE]:
-        #     pygame.quit()
-        #     quit()
 
     def _draw(self):
         glClearColor(0.5, 0.6, 0.65, 1.0)
@@ -384,32 +428,21 @@ class Renderer:
 
         glUseProgram(self.shader)
 
-        self.camera_eulers += np.radians(np.array([0, 0, 1], dtype=np.float64)) * .1
-
         view = self._get_view_matrix()
 
-        glUniformMatrix4fv(glGetUniformLocation(self.shader, "view"), 1, GL_FALSE, view)
+        glUniformMatrix4fv(self._view_location, 1, GL_FALSE, view)
 
         self._floor.draw(self.shader)
 
         for marker_object in self._marker_objects:
             marker_object.draw(self.shader)
-            marker_object.set_rotation(marker_object._rotation + np.radians(np.array([0, 1, 0])))
 
-        self._window.flip()
+        glutSwapBuffers()
 
-        # pygame.display.flip()
-
-        # self._clock.tick(60)
-
-    def _loop(self):
-        while True:
-            self._handle_events()
-            self._draw()
-            # self._clock.tick(60)
-
-    def get_frame(self):
-        data = glReadPixels(0, 0, self._width, self._height, GL_BGR, GL_UNSIGNED_BYTE)
+        frame_data = glReadPixels(0, 0, self._width, self._height, GL_BGR, GL_UNSIGNED_BYTE)
+        self._frame = self._convert_to_np_array(frame_data)
+        
+    def _convert_to_np_array(self, data):
         arr = np.frombuffer(data, dtype=np.uint8).reshape(self._height, self._width, 3)
         arr = np.flip(arr, 0)
         arr = np.ascontiguousarray(arr)
@@ -424,4 +457,9 @@ if __name__ == "__main__":
     # m1.set_rotation(np.array([np.pi/4, 0, np.pi/2]))
     renderer.add_marker_object(m1)
     renderer.add_marker_object(m2)
-    renderer.start_loop()
+    renderer.start()
+    while renderer._running:
+        frame = renderer.get_frame()
+        if frame is not None:
+            cv2.imshow("frame", frame)
+            cv2.waitKey(33)

@@ -25,6 +25,7 @@ class Navigation:
         
         self._accumulated_error = 0.0
 
+        self._STOPPING_DISTANCE = 1.0 # meters
         self._WAIT_PERIOD = .05
         self._MAX_SPEED = 0.9
         self._MIN_SPEED = 0.1
@@ -59,7 +60,11 @@ class Navigation:
 
     def drive_to_location(self, lat, lon):
         self._accumulated_error = 0
-        while self._running and self._gps.distance_to(lat, lon) > .0025:
+        while self._running and self._gps.distance_to(lat, lon) > self._STOPPING_DISTANCE / 1000:
+            if self._tracker.any_targets_found():
+                target = self._tracker.get_closest_target()
+                lat, lon = target.get_position()
+                # print(lat, lon)
             self._bearing_to = self._gps.bearing_to(lat, lon)
             self._calc_speeds = self.calculate_speeds(.8, self._bearing_to, self._WAIT_PERIOD , kp=.0165, ki=.002)
             self._wheels.set_wheel_speeds(*self._calc_speeds)

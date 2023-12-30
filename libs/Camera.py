@@ -42,6 +42,12 @@ class Camera:
     def load_distortion(self, path):
         self._distortion = np.load(path)
 
+    def set_intrinsic(self, intrinsic):
+        self._intrinsic = intrinsic
+
+    def set_distortion(self, distortion):
+        self._distortion = distortion
+
     def get_intrinsic(self):
         return self._intrinsic
     
@@ -83,21 +89,27 @@ class Camera:
             return self._frame
         
 class MockedCamera(Camera):
-    def __init__(self, simulation, *args, **kwargs):
+    def __init__(self, renderer, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._simulation = simulation
+        self._renderer = renderer
+        self._show_frame = True
 
     def start(self):
         if not self._running:
             self._running = True
             self._cap_thread.start()
 
-    def generate_frame(self, rover_pos, rover_bearing, aruco_markers):
-        pass
+    def load_frame(self):
+        frame = self._renderer.get_frame()
+        if frame is not None:
+            # frame = cv2.undistort(frame, self._intrinsic, self._distortion)
+
+            self._frame = frame
 
     def _cap_loop(self):
         while self._running:
-            with self._frame_lock:
-                sleep(1/self._framerate)
-                # print('reading frame')
-                # self._frame = cv2.imread('rover.png')
+            self.load_frame()
+            # if self._show_frame and self._frame is not None:
+            #     cv2.imshow('frame', self._frame)
+            #     cv2.waitKey(1)
+            sleep(1/self._framerate)
