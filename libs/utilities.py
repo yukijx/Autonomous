@@ -8,7 +8,7 @@ from argparse import ArgumentParser
 from configparser import ConfigParser
 
 def get_marker_location(corners, marker_size, intrinsic, distortion):
-    rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(corners, marker_size, intrinsic, distortion)
+    _, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(corners, marker_size, intrinsic, distortion)
 
     # this distance to the marker is the magnitude of the translation vector
     distance_to_marker = np.linalg.norm(tvecs[0][0])
@@ -61,13 +61,13 @@ def parse_arguments():
     """
     arg_parser = ArgumentParser()
     arg_parser.add_argument("-ll", "--latLong", required=True, type=str, help="takes a filename for a text file, then reads that file for latlong coordinates")
-    arg_parser.add_argument("-c --camera", default=0, type=int, help="takes a number representing which camera to use")
+    arg_parser.add_argument("-c", "--camera", default=0, type=int, help="takes a number representing which camera to use")
     arg_parser.add_argument("-t1", "--tag1", default=-1, type=int, help="takes the id value of the first tag, defaults to -1 if id not assigned")
     arg_parser.add_argument("-t2", "--tag2", default=-1, type=int, help="takes the id value of the second tag, defaults to -1 if id not assigned")
     args = arg_parser.parse_args()
     return args
 
-def parse_latlong_file(filename) -> list:
+def parse_latlong_file(dir, filename) -> list:
     """
     Parses a file containing latitude and longitude coordinates
     
@@ -78,7 +78,8 @@ def parse_latlong_file(filename) -> list:
         list: List of coordinates
     """
     locations = []
-    with open(filename) as f:
+    path = os.path.join(dir, filename)
+    with open(path) as f:
         line_number = 0
         for line in f:
             line_number += 1
@@ -95,7 +96,7 @@ def parse_latlong_file(filename) -> list:
 
     return locations
 
-def parse_config_file(filename) -> Dict[str, Dict[str, str]]:
+def parse_config_file(filepath) -> Dict[str, Dict[str, str]]:
     """
     Parses a config file
     
@@ -108,7 +109,9 @@ def parse_config_file(filename) -> Dict[str, Dict[str, str]]:
         being the config values
     """
     config = ConfigParser()
-    config.read(filename)
+    success = config.read(filepath)
+    if success == []:
+        raise FileNotFoundError(f'Could not find config file at {filepath}')
     return {section: {entry.upper(): val for entry,val in config[section].items()} for section in config.sections()}
 
 def get_camera_matrices(name, width, height) -> tuple[np.ndarray, np.ndarray]:
@@ -116,7 +119,6 @@ def get_camera_matrices(name, width, height) -> tuple[np.ndarray, np.ndarray]:
     Gets the intrinsic and distortion matrices from a calibration file
     
     Args:
-        cwd (str): Current working directory
         name (str): Name of camera
         width (int): Width of camera
         height (int): Height of camera

@@ -9,7 +9,7 @@ import numpy as np
 
 from libs.Camera import Camera
 from libs.GPSInterface import GPSInterface
-from libs.utilities import (degrees_to_meters, get_coordinates,
+from libs.utilities import (degrees_to_meters, meters_to_degrees, get_coordinates,
                             get_marker_location)
 
 '''
@@ -18,6 +18,7 @@ sys.path.append(darknetPath)
 from darknet_images import *
 from darknet import load_network
 '''
+
 
 class TrackedObject:
     def __init__(self, max_estimates):
@@ -28,6 +29,8 @@ class TrackedObject:
         self._last_update_time = None
 
     def get_position(self):
+        if self._position_estimate_length == 0:
+            return (0,0,0)
         avg_lat = sum([x[0][0] for x in self._position_estimates]
                       ) / len(self._position_estimates)
         avg_lon = sum([x[0][1] for x in self._position_estimates]
@@ -97,7 +100,7 @@ class ObjectTracker:
         # hardcoded because we only use one dictionary
         self._marker_dict = aruco.getPredefinedDictionary(aruco.DICT_4X4_50)
 
-        self._last_frame = None
+        self._last_frames = []
         self._marker_mode = True
         self._running = False
         self._thread = threading.Thread(
@@ -136,30 +139,39 @@ class ObjectTracker:
             config['TRACKED_OBJECT_LOCATION_ESTIMATES'])
         self._object_valid_time = float(config['TRACKED_OBJECT_VALID_TIME'])
 
-    def start(self, camera: Camera) -> None:
+    def start(self, cameras: "list[Camera]") -> None:
         """
         Starts the object tracker
 
         Args:
             camera (Camera): Camera to get frames from
         """
-        self.camera = camera
-        # get properties of camera
-        self._frame_width = self.camera._width
-        self._frame_height = self.camera._height
-        fps = self.camera._framerate
-        # Initialize camera
-        self.camera.start()
-
         # start the thread
+        print(cameras)
         if not self._running:
             self._running = True
-            if self._save_to_disk:
-                start_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                self._video_writer = cv2.VideoWriter(f"../autonomous_{start_timestamp}.avi", cv2.VideoWriter_fourcc(
-                    *'MJPG'), fps, (self._frame_width, self._frame_height), False)
+            self.cameras = cameras
+            self._video_writers = []
+            self._last_frames = [None for _ in cameras]
+            for camera in cameras:
+                camera.start()
+                width = camera._width
+                height = camera._height
+                fps = camera._framerate
+                if self._save_to_disk:
+                    start_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                    video_writer = cv2.VideoWriter(f"../recordings/autonomous_{start_timestamp}_{camera._camera_id}.avi", cv2.VideoWriter_fourcc(
+                        *'MJPG'), fps, (width, height), False)
+                    self._video_writers.append(video_writer)
             print('starting ar thread')
             self._thread.start()
+
+        # # get properties of camera
+        # self._frame_width = self.cameras._width
+        # self._frame_height = self.cameras._height
+        # fps = self.cameras._framerate
+        # # Initialize camera
+        # self.cameras.start()
 
     def stop(self) -> None:
         """
@@ -168,9 +180,13 @@ class ObjectTracker:
         if self._running:
             self._running = False
             self._thread.join()
-            self.camera.stop()
+            for target in self.tracked_objects.values():
+                target.clear_estimates()
+            for camera in self.cameras:
+                camera.stop()
             if self._save_to_disk:
-                self._video_writer.release()
+                for video_writer in self._video_writers:
+                    video_writer.release()
 
     def set_markers_to_track(self, markers: "list[int]"):
         """
@@ -214,48 +230,60 @@ class ObjectTracker:
 
     def _tracking_loop(self):
         while self._running:
-            frame = self.camera.get_frame()
-            if frame is not None and frame is not self._last_frame:
-                self._last_frame = frame
-                intrinsic = self.camera.get_intrinsic()
-                distortion = self.camera.get_distortion()
-                self._search_for_markers(frame, intrinsic, distortion)
+            for index, camera in enumerate(self.cameras):
+                frame = camera.get_frame()
+                if frame is not None and frame is not self._last_frames[index]:
+                    self._last_frames[index] = frame
+                    frame = self._process_camera_frame(camera, frame)
+                    self._save_frame(frame, index)
 
-    def _search_for_markers(self, frame: np.ndarray, intrinsic: np.ndarray, distortion: np.ndarray):
-        print('searching for markers')
-        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+    def _save_frame(self, frame: np.ndarray, index):
+        if self._save_to_disk:
+            self._video_writers[index].write(frame)
+
+    def _process_camera_frame(self, camera: Camera, frame: np.ndarray):
+        intrinsic = camera.get_intrinsic()
+        distortion = camera.get_distortion()
+        position = camera.get_position()
+        yaw = camera.get_yaw()
+        frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2GRAY)
         corners, marker_ids, _ = aruco.detectMarkers(frame, self._marker_dict)
         if marker_ids is not None:
             for marker_id, corner in zip(marker_ids, corners):
                 if marker_id[0] in self.markers_to_track:
-                    print('found marker', marker_id[0])
-                    self._marker_found = True
-                    angle, distance = get_marker_location(
-                        corner, self._aruco_size, intrinsic, distortion)
-                    print('ad', angle, distance)
-                    if self.tracked_objects.get(marker_id[0]) is None:
-                        self.tracked_objects[marker_id[0]] = TrackedObject(
-                            self._tracked_object_n_locations)
-                    rover_lat, rover_lon = self._gps.get_position()
-                    rover_bearing = self._gps.get_bearing()
-                    measured_coord = get_coordinates(
-                        rover_lat, rover_lon, distance/1000, rover_bearing + angle)
-                    mc_lat, mc_lon = measured_coord
-                    mc_lat_m = degrees_to_meters(mc_lat)
-                    mc_lon_m = degrees_to_meters(mc_lon)
-                    rover_lat_m = degrees_to_meters(rover_lat)
-                    rover_lon_m = degrees_to_meters(rover_lon)
-                    print('rover', rover_lat_m, rover_lon_m)
-                    print('distance', distance)
-                    print('mc', mc_lat_m, mc_lon_m)
-                    self.tracked_objects[marker_id[0]].update(
-                        measured_coord, distance)
+                    self._update_marker_location(
+                        corner, marker_id[0], intrinsic, distortion, position, yaw)
+            frame = cv2.aruco.drawDetectedMarkers(
+                frame, corners, marker_ids)
+        return frame
 
-            if self._save_to_disk:
-                frame = cv2.aruco.drawDetectedMarkers(
-                    frame, corners, marker_ids)
-        if self._save_to_disk:
-            self._video_writer.write(frame)
+    def _update_marker_location(self, corners, marker_id, intrinsic, distortion, position, yaw):
+        """
+        Updates the location of a marker based on its corners and current rover location
+
+        Args:
+            corners (np.ndarray): Corners of the marker
+            marker_id (int): ID of the marker
+            intrinsic (np.ndarray): Intrinsic camera matrix
+            distortion (np.ndarray): Distortion coefficients
+            position (np.ndarray): Position in meters of the camera relative to the rover center (GPS coordinates)
+            yaw (float): Yaw of the camera
+        """
+        angle, distance = get_marker_location(
+            corners, self._aruco_size, intrinsic, distortion)
+        if self.tracked_objects.get(marker_id) is None:
+            self.tracked_objects[marker_id] = TrackedObject(
+                self._tracked_object_n_locations)
+        rover_lat, rover_lon = self._gps.get_position()
+        rover_bearing = self._gps.get_bearing()
+        camera_offset_x_deg = meters_to_degrees(position[0])
+        camera_offset_z_deg = meters_to_degrees(position[2])
+        camera_lon  = rover_lon + camera_offset_x_deg * np.cos(rover_bearing)
+        camera_lat  = rover_lat + camera_offset_z_deg * np.sin(rover_bearing)
+        measured_coord = get_coordinates(
+            camera_lat, camera_lon, distance/1000, yaw + rover_bearing + angle)
+        self.tracked_objects[marker_id].update(
+            measured_coord, distance)
 
     """
     Leaving this method commented out here because it may be useful in the future, but it is not currently used

@@ -3,12 +3,13 @@ from libs.Wheels import WheelInterface, MockedWheelInterface
 from libs.GPSInterface import GPSInterface, MockedGPSInterface
 from libs.Navigation import Navigation
 from libs.Lights import Lights
+from libs.Camera import Camera
 
 class Rover:
     def __init__(self):
-        self._gps = GPSInterface()
         self._wheels = WheelInterface()
         self._lights = Lights()
+        self._gps = GPSInterface(self._wheels)
         self._object_tracker = ObjectTracker(self._gps)
         self._navigation = Navigation(self._gps, self._wheels, self._object_tracker, self._lights)
 
@@ -37,11 +38,11 @@ class Rover:
     def start_lights(self, ip, port):
         self._lights.start(ip, port)
 
-    def start_navigation(self, coordinates):
-        self._navigation.start(coordinates)
+    def start_navigation(self, coordinates, looking_for_target):
+        self._navigation.start(coordinates, looking_for_target)
 
-    def start_tracking(self, camera):
-        self._object_tracker.start(camera)
+    def start_tracking(self, cameras: "list[Camera]"):
+        self._object_tracker.start(cameras)
 
     def add_ar_marker(self, id):
         self._object_tracker.set_markers_to_track([id])

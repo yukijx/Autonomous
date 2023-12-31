@@ -8,6 +8,7 @@ import cv2
 from math import sqrt
 import pyrr
 import time
+from time import perf_counter_ns
 
 vertex_source = """
 #version 330 core
@@ -82,6 +83,9 @@ class MarkerTexture:
         self._aruco_dict = aruco.getPredefinedDictionary(aruco_dict)
         self._texture = None
         self._generate_texture()
+
+    def __del__(self):
+        glDeleteTextures(1, (self._texture,))
 
     def _generate_texture(self):
         marker_image = aruco.generateImageMarker(self._aruco_dict, self._id, int(self._texture_size*3/4))
@@ -207,6 +211,10 @@ class MarkerMesh:
         glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, n_solid_attrs*4, ctypes.c_void_p(28))
         glEnableVertexAttribArray(2)
 
+    def __del__(self):
+        glDeleteVertexArrays(1, (self._vao,))
+        glDeleteBuffers(1, (self._vbo,))
+
     def bind(self):
         glBindVertexArray(self._vao)
 
@@ -222,6 +230,10 @@ class MarkerObject:
         self._mesh = MarkerMesh(size)
         self._position = np.array([0, 0, 0])
         self._rotation = np.array([0, 0, 0])
+
+    def __del__(self):
+        glDeleteVertexArrays(1, (self._vao,))
+        glDeleteBuffers(1, (self._vbo,))
 
     def set_position(self, position):
         self._position = position
@@ -250,6 +262,9 @@ class FloorTexture:
         self._texture_size = texture_size
         self._texture = None
         self._generate_texture()
+
+    def __del__(self):
+        glDeleteTextures(1, (self._texture,))
 
     def _generate_texture(self):
         # create a random grid texture for the floor
@@ -280,6 +295,9 @@ class FloorObject:
         self._position = np.array([0, 0, 0])
         self._texture = FloorTexture(512)
 
+    def __del__(self):
+        glDeleteVertexArrays(1, (self._vao,))
+        glDeleteBuffers(1, (self._vbo,))
 
     def _generate_mesh(self):
         vertices = np.array([
@@ -337,18 +355,21 @@ class FloorObject:
         self._texture.unbind()
         
 class Renderer:
-    def __init__(self, width, height, hide_window=False):
+    def __init__(self, width, height, v_fov, hide_window=False):
         self._width = width
         self._height = height
+        self._v_fov = v_fov
         self._hide_window = hide_window
         self._running = False
 
-        self._buffer_lock = Lock()
+        self._rover_position = np.array([1, 1, 0], dtype=np.float32)
+        self._rover_eulers = np.array([0, 0, 0], dtype=np.float32)
 
-        self._camera_position = np.array([1, 1, 0], dtype=np.float32)
-        self._camera_eulers = np.array([0, 0, 0], dtype=np.float32)
-
-        self._frame = None
+        self._n_cameras = 0
+        self._camera_index = 0
+        self._camera_positions = []
+        self._camera_eulers = []
+        self._rendered_frames = []
 
         self._init_window()
         self._init_opengl()
@@ -367,17 +388,25 @@ class Renderer:
     def stop(self):
         self._running = False
 
-    def get_frame(self):
-        return self._frame
+    def add_camera(self, position, yaw):
+        self._camera_positions.append(position)
+        self._camera_eulers.append(np.array([0, 0, -np.deg2rad(yaw)], dtype=np.float32))
+        self._rendered_frames.append(None)
+        self._n_cameras += 1
+
+    def get_frame(self, camera_index):
+        if self._rendered_frames[camera_index] is None:
+            return None
+        return self._rendered_frames[camera_index]
 
     def add_marker_object(self, marker_object):
         self._marker_objects.append(marker_object)
 
-    def set_camera_position(self, lat, lon, alt):
-        self._camera_position = np.array([lon, alt, -lat], dtype=np.float32)
+    def set_rover_position(self, lat, lon, alt):
+        self._rover_position = np.array([lon, alt, -lat], dtype=np.float32)
 
-    def set_camera_rotation(self, theta):
-        self._camera_eulers[2] = -theta
+    def set_rover_bearing(self, theta):
+        self._rover_eulers[2] = -theta
 
     def set_camera_matrix(self, intrinsic, distortion):
         self._intrinsic = intrinsic
@@ -409,30 +438,35 @@ class Renderer:
 
         self.shader = create_shader(vertex_source, fragment_source)
 
-        self._projection = pyrr.matrix44.create_perspective_projection_matrix(50, self._width/self._height, 0.1, 100.0)
-        self._view = self._get_view_matrix()
+        self._projection = pyrr.matrix44.create_perspective_projection_matrix(self._v_fov, self._width/self._height, 0.1, 100.0)
+        # self._view = self._get_view_matrix()
 
         glUseProgram(self.shader)
         self._view_location = glGetUniformLocation(self.shader, "view")
         self._projection_location = glGetUniformLocation(self.shader, "projection")
         glUniformMatrix4fv(self._projection_location, 1, GL_FALSE, self._projection)
-        glUniformMatrix4fv(self._view_location, 1, GL_FALSE, self._view)
+        # glUniformMatrix4fv(self._view_location, 1, GL_FALSE, self._view)
         glUseProgram(0)
 
-    def _get_view_matrix(self):
+    def _get_view_matrix(self, camera_index=0):
         view = pyrr.matrix44.create_identity()
-        view = pyrr.matrix44.multiply(view, pyrr.matrix44.create_from_translation(-self._camera_position, dtype=np.float32))
-        view = pyrr.matrix44.multiply(view, pyrr.matrix44.create_from_eulers(self._camera_eulers, dtype=np.float32))
+        view = pyrr.matrix44.multiply(view, pyrr.matrix44.create_from_translation(-self._rover_position, dtype=np.float32))
+        view = pyrr.matrix44.multiply(view, pyrr.matrix44.create_from_eulers(self._rover_eulers, dtype=np.float32))
+        view = pyrr.matrix44.multiply(view, pyrr.matrix44.create_from_translation(-self._camera_positions[camera_index], dtype=np.float32))
+        view = pyrr.matrix44.multiply(view, pyrr.matrix44.create_from_eulers(self._camera_eulers[camera_index], dtype=np.float32))
         return view
 
 
     def _draw(self):
+        if self._n_cameras == 0:
+            return
+        
         glClearColor(0.5, 0.6, 0.65, 1.0)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
         glUseProgram(self.shader)
 
-        view = self._get_view_matrix()
+        view = self._get_view_matrix(self._camera_index)
 
         glUniformMatrix4fv(self._view_location, 1, GL_FALSE, view)
 
@@ -441,29 +475,42 @@ class Renderer:
         for marker_object in self._marker_objects:
             marker_object.draw(self.shader)
 
-        glutSwapBuffers()
 
-        frame_data = glReadPixels(0, 0, self._width, self._height, GL_BGR, GL_UNSIGNED_BYTE)
-        self._frame = self._convert_to_np_array(frame_data)
-        
+        frame_data = glReadPixels(0, 0, self._width, self._height, GL_BGRA, GL_UNSIGNED_BYTE)
+        glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0)
+        self._rendered_frames[self._camera_index] = self._convert_to_np_array(frame_data)
+        self._camera_index = (self._camera_index + 1) % self._n_cameras
+
+        glutSwapBuffers()
+        # time.sleep(.1)
+            
     def _convert_to_np_array(self, data):
-        arr = np.frombuffer(data, dtype=np.uint8).reshape(self._height, self._width, 3)
+        arr = np.frombuffer(data, dtype=np.uint8).reshape(self._height, self._width, 4)
         arr = np.flip(arr, 0)
         arr = np.ascontiguousarray(arr)
         return arr
 
 if __name__ == "__main__":
-    renderer = Renderer(1920, 1080)
+    renderer = Renderer(1920, 1080, 50)
+    camera_pos_1 = np.array([.2, 0, 0])
+    camera_yaw_1 = 0
+    camera_pos_2 = np.array([-.2, 0, 0])
+    camera_yaw_2 = 30
+    renderer.add_camera(camera_pos_1, camera_yaw_1)
+    renderer.add_camera(camera_pos_2, camera_yaw_2)
     m1 = MarkerObject(0, 0.20)
-    m1.set_position(np.array([2, 1, -5]))
+    m1.set_position(np.array([1, 1, -5]))
     m2 = MarkerObject(1, 0.20)
-    m2.set_position(np.array([0, 1, -5]))
-    # m1.set_rotation(np.array([np.pi/4, 0, np.pi/2]))
+    m2.set_position(np.array([-1, 1, -5]))
     renderer.add_marker_object(m1)
     renderer.add_marker_object(m2)
     renderer.start()
+    time.sleep(1)
     while renderer._running:
-        frame = renderer.get_frame()
+        for m in renderer._marker_objects:
+            m.set_rotation(m._rotation + np.array([0, 0.1, 0]))
+        frame = renderer.get_frame(0)
         if frame is not None:
             cv2.imshow("frame", frame)
-            cv2.waitKey(33)
+            if cv2.waitKey(33) == ord('q'):
+                renderer.stop()

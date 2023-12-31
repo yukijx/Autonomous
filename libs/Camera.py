@@ -22,14 +22,33 @@ class Camera:
         _frame_lock (threading.Lock): Lock for the frame
         _cap_thread (threading.Thread): Thread for reading frames
     """
-    def __init__(self, camera_id=0, width=1280, height=720, framerate=30, format='MJPG'):
+    def __init__(self, camera_id=0, width=1280, height=720, framerate=30, format='MJPG', intrinsic=None, distortion=None, position=None, yaw=None) -> None:
         self._camera_id = camera_id
         self._width = width
         self._height = height
         self._framerate = framerate
         self._format = format
-        self._intrinsic = None
-        self._distortion = None
+
+        if intrinsic is not None:
+            self._intrinsic = intrinsic
+        else:
+            self._intrinsic = None
+
+        if distortion is not None:
+            self._distortion = distortion
+        else:
+            self._distortion = None
+
+        if position is not None:
+            self._position = position
+        else:
+            self._position = np.array([0, 0, 0], dtype=np.float32)
+
+        if yaw is not None:
+            self._yaw = yaw
+        else:
+            self._yaw = 0
+            
         self._cap = None
         self._frame = None
         self._running = False
@@ -138,6 +157,42 @@ class Camera:
             int: Value of the property
         """
         return self._cap.get(prop)
+    
+    def set_position(self, position: np.ndarray) -> None:
+        """
+        Sets the position of the camera
+        
+        Args:
+            position (np.ndarray): Position of the camera
+        """
+        self._position = position
+
+    def set_yaw(self, theta: float) -> None:
+        """
+        Sets the yaw of the camera
+
+        Args:
+            theta (float): Yaw of the camera
+        """
+        self._yaw = theta
+
+    def get_position(self) -> np.ndarray:
+        """
+        Gets the position of the camera
+        
+        Returns:
+            np.ndarray: Position of the camera
+        """
+        return self._position
+    
+    def get_yaw(self) -> float:
+        """
+        Gets the yaw of the camera
+
+        Returns:
+            float: Yaw of the camera
+        """
+        return self._yaw
 
     def start(self) -> None:
         """
@@ -203,7 +258,7 @@ class MockedCamera(Camera):
         """
         Loads a frame from the renderer
         """
-        frame = self._renderer.get_frame()
+        frame = self._renderer.get_frame(self._camera_id)
         if frame is not None:
             self._frame = frame
 
