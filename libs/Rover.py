@@ -48,7 +48,7 @@ class Rover:
         self._object_tracker.set_markers_to_track([id])
 
     def halt(self):
-        # self._drive.halt()
+        self._wheels.halt()
         pass
 
     def get_coordinates(self):

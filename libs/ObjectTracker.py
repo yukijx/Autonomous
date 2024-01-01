@@ -2,6 +2,7 @@ import os
 import threading
 from datetime import datetime
 from time import time
+from math import sin, cos
 
 import cv2
 import cv2.aruco as aruco
@@ -10,7 +11,7 @@ import numpy as np
 from libs.Camera import Camera
 from libs.GPSInterface import GPSInterface
 from libs.utilities import (degrees_to_meters, meters_to_degrees, get_coordinates,
-                            get_marker_location)
+                            get_marker_location, distance_to)
 
 '''
 darknetPath = os.path.dirname(os.path.abspath(__file__)) + '/../YOLO/darknet/'
@@ -147,7 +148,6 @@ class ObjectTracker:
             camera (Camera): Camera to get frames from
         """
         # start the thread
-        print(cameras)
         if not self._running:
             self._running = True
             self.cameras = cameras
@@ -269,21 +269,34 @@ class ObjectTracker:
             position (np.ndarray): Position in meters of the camera relative to the rover center (GPS coordinates)
             yaw (float): Yaw of the camera
         """
-        angle, distance = get_marker_location(
+        angle_from_camera, distance_from_camera = get_marker_location(
             corners, self._aruco_size, intrinsic, distortion)
         if self.tracked_objects.get(marker_id) is None:
             self.tracked_objects[marker_id] = TrackedObject(
                 self._tracked_object_n_locations)
         rover_lat, rover_lon = self._gps.get_position()
         rover_bearing = self._gps.get_bearing()
-        camera_offset_x_deg = meters_to_degrees(position[0])
-        camera_offset_z_deg = meters_to_degrees(position[2])
-        camera_lon  = rover_lon + camera_offset_x_deg * np.cos(rover_bearing)
-        camera_lat  = rover_lat + camera_offset_z_deg * np.sin(rover_bearing)
+        camera_offset_side_deg = meters_to_degrees(position[0])
+        camera_offset_front_deg = meters_to_degrees(position[2])
+        camera_lon_deg = rover_lon + \
+            cos(rover_bearing) * camera_offset_side_deg + \
+            -sin(rover_bearing) * camera_offset_front_deg
+        camera_lat_deg = rover_lat + \
+            -sin(rover_bearing) * camera_offset_side_deg + \
+            -cos(rover_bearing) * camera_offset_front_deg
         measured_coord = get_coordinates(
-            camera_lat, camera_lon, distance/1000, yaw + rover_bearing + angle)
+            camera_lat_deg, camera_lon_deg, distance_from_camera/1000, yaw + rover_bearing + angle_from_camera)
+        distance_from_rover = distance_to(
+            rover_lat, rover_lon, measured_coord[0], measured_coord[1])*1000
+        lat_m = degrees_to_meters(measured_coord[0])
+        lon_m = degrees_to_meters(measured_coord[1])
+        camera_lon_m = degrees_to_meters(camera_lon_deg)
+        camera_lat_m = degrees_to_meters(camera_lat_deg)
+        print('camera', camera_lat_m, camera_lon_m)
+        print('measured', lat_m, lon_m)
+        print('ad', angle_from_camera, distance_from_camera)
         self.tracked_objects[marker_id].update(
-            measured_coord, distance)
+            measured_coord, distance_from_rover)
 
     """
     Leaving this method commented out here because it may be useful in the future, but it is not currently used

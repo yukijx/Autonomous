@@ -9,6 +9,7 @@ class WheelInterface:
         self._SEND_PERIOD = 0.1
         self._TIMEOUT = 3.0
         self._running = False
+        self._halted = False
         self._speeds = [0, 0]
         self._last_received = time()
         self._lock = threading.Lock()
@@ -22,6 +23,7 @@ class WheelInterface:
     def start(self, ip, port):
         self._ip = ip
         self._port = port
+        self._halted = False
         if not self._running:
             self._running = True
             self._thread.start()
@@ -31,11 +33,18 @@ class WheelInterface:
             self._running = False
             self._thread.join()
 
+    def halt(self):
+        self.set_wheel_speeds(0, 0)
+        self._halted = True
+
     def set_wheel_speeds(self, left, right):
         self._last_received = time()
         with self._lock:
-            self._speeds = [left, right]
-    
+            if not self._halted:
+                self._speeds = [left, right]
+            else:
+                self._speeds = [0, 0]
+                
     def get_wheel_speeds(self):
         with self._lock:
             return self._speeds

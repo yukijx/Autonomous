@@ -313,7 +313,7 @@ class MockedGPSInterface(GPSInterface):
         return self._real_lat, self._real_lon
 
     def get_real_bearing(self) -> float:
-        return self._real_bearing
+        return np.rad2deg(self._real_bearing)
 
     def _update_fields_loop(self) -> None:
         """
@@ -342,7 +342,6 @@ class MockedGPSInterface(GPSInterface):
             # if the rover is moving, update the bearing
             if left_speed != 0 or right_speed != 0:
                 is_reversed = left_speed + right_speed < 0
-
                 # update the bearing
                 self.bearing = self._calc_avg_bearing(
                     self.old_latitude, self.old_longitude, self.latitude, self.longitude, is_reversed)

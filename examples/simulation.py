@@ -27,6 +27,33 @@ VIEWER_WIDTH = 1280
 VIEWER_HEIGHT = 720
 CAMERA_V_FOV = 50
 
+def main():
+    sim = Simulation()
+    # sim.create_gps_target(10, 0, degrees=False)
+    # sim.create_aruco_target(0, 10, 10, degrees=False)
+    # sim.rover.add_ar_marker(0)
+
+    rover_lat = 18
+    rover_lon = 0
+    # sim.set_rover_position(rover_lat, rover_lon)
+    # sim.set_rover_bearing(90, True)
+    sim.create_gps_target(0, 30, degrees=False)
+    d_lat = np.random.random()*20-10
+    d_lon = np.random.random()*20-10
+    tag_lat = 20
+    tag_lon = 50
+    sim.create_aruco_target(3, tag_lat, tag_lon, degrees=False)
+    sim.create_gps_target(tag_lat+d_lat, tag_lon+d_lon, degrees=False)
+    sim.rover.add_ar_marker(3)
+    sim.start(looking_for_target=True)
+    # sim.rover.halt()
+
+    # stop_timer = Timer(10, sim.stop)
+    # stop_timer.start()
+
+    viewer = Viewer(sim)
+    viewer.run()
+
 
 class Simulation:
     def __init__(self):
@@ -49,41 +76,40 @@ class Simulation:
 
         intrinsic, distortion = get_camera_matrices(
             camera_name, self._camera_width, self._camera_height)
-        
+
         camera_center_pos = np.array([0, 0, 0], dtype=np.float32)
         camera_center_yaw = 0
-        camera_left_pos = np.array([-.2, 0, 0], dtype=np.float32)
-        camera_left_yaw = -30
-        camera_right_pos = np.array([.2, 0, 0], dtype=np.float32)
-        camera_right_yaw = 30
+        camera_left_pos = np.array([-.2, 0, .05], dtype=np.float32)
+        camera_left_yaw = -40
+        camera_right_pos = np.array([.2, 0, 0.05], dtype=np.float32)
+        camera_right_yaw = 40
 
         self.mocked_camera_center = MockedCamera(
             self.renderer, 0, self._camera_width, self._camera_height, self._camera_fps,
             intrinsic=intrinsic,
-            distortion=distortion, 
-            position=camera_center_pos, 
+            distortion=distortion,
+            position=camera_center_pos,
             yaw=camera_center_yaw)
 
         self.mocked_camera_left = MockedCamera(
             self.renderer, 1, self._camera_width, self._camera_height, self._camera_fps,
             intrinsic=intrinsic,
-            distortion=distortion, 
-            position=camera_left_pos, 
+            distortion=distortion,
+            position=camera_left_pos,
             yaw=camera_left_yaw)
-
 
         self.mocked_camera_right = MockedCamera(
             self.renderer, 2, self._camera_width, self._camera_height, self._camera_fps,
             intrinsic=intrinsic,
-            distortion=distortion, 
-            position=camera_right_pos, 
+            distortion=distortion,
+            position=camera_right_pos,
             yaw=camera_right_yaw)
 
         self.renderer.add_camera(camera_center_pos, camera_center_yaw)
         self.renderer.add_camera(camera_left_pos, camera_left_yaw)
         self.renderer.add_camera(camera_right_pos, camera_right_yaw)
 
-        cameras = [ self.mocked_camera_center, self.mocked_camera_left, self.mocked_camera_right]
+        cameras = [self.mocked_camera_center, self.mocked_camera_left, self.mocked_camera_right]
 
         self.rover = MockedRover()
         self.rover.configure(cfg)
@@ -137,19 +163,39 @@ class Simulation:
         self.renderer.stop()
         self.rover.stop()
 
+    def set_rover_position(self, lat, lon, degrees=False):
+        if not degrees:
+            lat = meters_to_degrees(lat)
+            lon = meters_to_degrees(lon)
+        self.rover._gps._real_lat = lat
+        self.rover._gps._real_lon = lon
+        self.rover._gps.old_latitude = lat
+        self.rover._gps.old_longitude = lon
+
+    def set_rover_bearing(self, bearing, degrees=False):
+        # i let the calculated bearing be stored as degrees
+        # and the "real" or simulated bearing be stored as radians
+        # because i am stupid
+        if degrees:
+            self.rover._gps._real_bearing = np.deg2rad(bearing)
+            self.rover._gps.bearing = bearing
+        else:
+            self.rover._gps._real_bearing = bearing
+            self.rover._gps.bearing = np.rad2deg(bearing)
+
     def step(self, dt):
         self.rover._gps.update_position(dt)
-        gps_pos = self.rover._gps.get_position()
-
         real_pos = self.rover._gps.get_real_position()
-        real_bearing = self.rover._gps.get_real_bearing()
+        real_bearing_deg = self.rover._gps.get_real_bearing()
+        real_bearing_rad = np.deg2rad(real_bearing_deg)
 
         lat_m = degrees_to_meters(real_pos[0])
         lon_m = degrees_to_meters(real_pos[1])
 
         self.renderer.set_rover_position(lat_m, lon_m, 1)
-        self.renderer.set_rover_bearing(real_bearing)
+        self.renderer.set_rover_bearing(real_bearing_rad)
 
+        gps_pos = self.rover._gps.get_position()
         if gps_pos not in self.gps_measurements:
             self.gps_measurements.append(gps_pos)
 
@@ -160,17 +206,17 @@ class Viewer:
         pygame.init()
         self._width = VIEWER_WIDTH
         self._height = VIEWER_HEIGHT
-        self.screen = pygame.display.set_mode(
+        self._screen = pygame.display.set_mode(
             (self._width, self._height), RESIZABLE)
         self.clock = pygame.time.Clock()
         self._camera_pos = np.array([0, 0], dtype=np.float32)
         self._scale = 50 / self._width  # meters per pixel
         self._rover_size = 1  # meter
-        self.orig_rover_rect = pygame.surface.Surface(
+        self._orig_rover_rect = pygame.surface.Surface(
             (int(100*2/3), 100), pygame.SRCALPHA)
-        self.orig_rover_rect.fill((0, 0, 0))
-        self.orig_rover_rect.set_alpha(100)
-        self.running = True
+        self._orig_rover_rect.fill((0, 0, 0))
+        self._orig_rover_rect.set_alpha(100)
+        self._running = True
         self._mouse_pressed = False
 
     def coords_in_screen(self, x, y):
@@ -187,7 +233,8 @@ class Viewer:
             lon = degrees_to_meters(lon)
             lat_x, lat_y = self.world_to_screen(lon, lat)
             if self.coords_in_screen(lat_x, lat_y):
-                pygame.draw.circle(self.screen, (255, 0, 0), (lat_x, lat_y), 5)
+                pygame.draw.circle(
+                    self._screen, (255, 0, 0), (lat_x, lat_y), 5)
 
     def draw_gps_targets(self, gps_targets):
         # draw a blue circle at each target position
@@ -196,7 +243,7 @@ class Viewer:
             lon = degrees_to_meters(lon)
             target_x, target_y = self.world_to_screen(lon, lat)
             if self.coords_in_screen(target_x, target_y):
-                pygame.draw.circle(self.screen, (0, 0, 255),
+                pygame.draw.circle(self._screen, (0, 0, 255),
                                    (target_x, target_y), 10)
 
     def draw_marker_objects(self, marker_objects):
@@ -205,7 +252,7 @@ class Viewer:
             lon_m = degrees_to_meters(pos[1])
             x, y = self.world_to_screen(lon_m, lat_m)
             if self.coords_in_screen(x, y):
-                pygame.draw.circle(self.screen, (0, 255, 0), (x, y), 10)
+                pygame.draw.circle(self._screen, (0, 255, 0), (x, y), 10)
 
     def draw_tracked_objects(self, rover):
         tracked_objects = rover._object_tracker.tracked_objects
@@ -215,7 +262,7 @@ class Viewer:
             lon_m = degrees_to_meters(lon)
             x, y = self.world_to_screen(lon_m, lat_m)
             if self.coords_in_screen(x, y):
-                pygame.draw.circle(self.screen, (200, 180, 0), (x, y), 10)
+                pygame.draw.circle(self._screen, (200, 180, 0), (x, y), 10)
 
     def draw_rover(self, rover):
         # get rover coordinates
@@ -224,8 +271,8 @@ class Viewer:
             degrees_to_meters(lon), degrees_to_meters(lat))
 
         # get rover bearing
-        real_bearing_rad = rover._gps.get_real_bearing()
-        real_bearing_deg = real_bearing_rad * 180 / pi
+        real_bearing_deg = rover._gps.get_real_bearing()
+        real_bearing_rad = np.deg2rad(real_bearing_deg)
 
         # draw rover
         front = pygame.surface.Surface((int(100*2/3), 100//3), pygame.SRCALPHA)
@@ -235,36 +282,53 @@ class Viewer:
             front.fill((255, 165, 0))
         elif rover._lights.current_color == 'r':
             front.fill((255, 0, 0))
-        self.orig_rover_rect.blit(front, (0, 0))
+        self._orig_rover_rect.blit(front, (0, 0))
         rover_rect = pygame.transform.rotate(
-            self.orig_rover_rect, -real_bearing_deg)
+            self._orig_rover_rect, -real_bearing_deg)
         rover_rect = pygame.transform.scale(rover_rect, (int(
             self._rover_size/self._scale), int(self._rover_size/self._scale)))
         bounds = rover_rect.get_bounding_rect()
 
         rover_rect.set_alpha(100)
-        self.screen.blit(rover_rect, (rover_x-bounds.width //
-                         2, rover_y-bounds.height//2))
+        self._screen.blit(rover_rect, (rover_x-bounds.width //
+                                       2, rover_y-bounds.height//2))
 
         calc_bearing = rover._gps.get_bearing()
         calc_bearing_rad = calc_bearing * pi / 180
 
+        # draw dots represnting camera positions
+        for camera in rover._object_tracker.cameras:
+            camera_offset_side_deg = meters_to_degrees(camera._position[0])
+            camera_offset_front_deg = meters_to_degrees(camera._position[2])
+            camera_lon_deg = lon + \
+                cos(real_bearing_rad) * camera_offset_side_deg + \
+                -sin(real_bearing_rad) * camera_offset_front_deg
+            camera_lat_deg = lat + \
+                -sin(real_bearing_rad) * camera_offset_side_deg + \
+                -cos(real_bearing_rad) * camera_offset_front_deg
+
+            camera_x, camera_y = self.world_to_screen(
+                degrees_to_meters(camera_lon_deg), degrees_to_meters(camera_lat_deg))
+            if self.coords_in_screen(camera_x, camera_y):
+                pygame.draw.circle(self._screen, (0, 0, 0),
+                                   (camera_x, camera_y), 5)
+
         # draw rover bearing
         bearing_x = rover_x + sin(calc_bearing_rad) * 50
         bearing_y = rover_y - cos(calc_bearing_rad) * 50
-        pygame.draw.line(self.screen, (0, 0, 0),
+        pygame.draw.line(self._screen, (0, 0, 0),
                          (rover_x, rover_y), (bearing_x, bearing_y), 3)
 
     def run(self):
-        while self.running:
+        while self._running:
             for event in pygame.event.get():
                 if event.type == QUIT:
-                    self.running = False
+                    self._running = False
                     self.sim.stop()
                 # check key presses
                 elif event.type == KEYDOWN:
                     if event.key == K_ESCAPE:
-                        self.running = False
+                        self._running = False
                         self.sim.stop()
                     elif event.key == K_UP:
                         self._camera_pos[1] += 50 * self._scale
@@ -289,14 +353,14 @@ class Viewer:
                     self._scale *= 1 + event.y * -.1
                     self._scale = max(self._scale, 1e-6)
 
-            self._width = self.screen.get_width()
-            self._height = self.screen.get_height()
+            self._width = self._screen.get_width()
+            self._height = self._screen.get_height()
             rel_x, rel_y = pygame.mouse.get_rel()
             if self._mouse_pressed:
                 self._camera_pos[0] -= rel_x * self._scale
                 self._camera_pos[1] += rel_y * self._scale
 
-            self.screen.fill((255, 255, 255))
+            self._screen.fill((255, 255, 255))
 
             self.sim.step(1/SIMULATION_FREQ)
 
@@ -319,22 +383,4 @@ class Viewer:
 
 
 if __name__ == '__main__':
-    sim = Simulation()
-    sim.create_gps_target(30, 0, degrees=False)
-    sim.create_aruco_target(0, 40, 10, degrees=False)
-    sim.rover.add_ar_marker(0)
-    # sim.create_gps_target(0, 30, degrees=False)
-    # d_lat = np.random.random()*20-10
-    # d_lon = np.random.random()*20-10
-    # tag_lat = 20
-    # tag_lon = 50
-    # sim.create_aruco_target(3, tag_lat, tag_lon, degrees=False)
-    # sim.create_gps_target(tag_lat+d_lat, tag_lon+d_lon, degrees=False)
-    # sim.rover.add_ar_marker(3)
-    sim.start(looking_for_target=True)
-
-    # stop_timer = Timer(10, sim.stop)
-    # stop_timer.start()
-
-    viewer = Viewer(sim)
-    viewer.run()
+    main()

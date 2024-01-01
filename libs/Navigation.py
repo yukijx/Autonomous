@@ -95,6 +95,9 @@ class Navigation:
                     self._found_target = True
                     self._running = False
             else:
+                if location_ind >= len(self._locations):
+                    self._running = False
+                    break
                 lat, lon = self._locations[location_ind]
                 if self._drive_to_location(lat, lon, time_elapsed):
                     print('made it to a checkpoint')

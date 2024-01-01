@@ -84,9 +84,6 @@ class MarkerTexture:
         self._texture = None
         self._generate_texture()
 
-    def __del__(self):
-        glDeleteTextures(1, (self._texture,))
-
     def _generate_texture(self):
         marker_image = aruco.generateImageMarker(self._aruco_dict, self._id, int(self._texture_size*3/4))
         marker_image = cv2.copyMakeBorder(marker_image, int(self._texture_size/8), int(self._texture_size/8), int(self._texture_size/8), int(self._texture_size/8), cv2.BORDER_CONSTANT, value=[255, 255, 255])
@@ -211,10 +208,6 @@ class MarkerMesh:
         glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, n_solid_attrs*4, ctypes.c_void_p(28))
         glEnableVertexAttribArray(2)
 
-    def __del__(self):
-        glDeleteVertexArrays(1, (self._vao,))
-        glDeleteBuffers(1, (self._vbo,))
-
     def bind(self):
         glBindVertexArray(self._vao)
 
@@ -230,10 +223,6 @@ class MarkerObject:
         self._mesh = MarkerMesh(size)
         self._position = np.array([0, 0, 0])
         self._rotation = np.array([0, 0, 0])
-
-    def __del__(self):
-        glDeleteVertexArrays(1, (self._vao,))
-        glDeleteBuffers(1, (self._vbo,))
 
     def set_position(self, position):
         self._position = position
@@ -263,9 +252,6 @@ class FloorTexture:
         self._texture = None
         self._generate_texture()
 
-    def __del__(self):
-        glDeleteTextures(1, (self._texture,))
-
     def _generate_texture(self):
         # create a random grid texture for the floor
         grid = np.random.randint(0, 255, (self._texture_size, self._texture_size, 3), dtype=np.uint8)
@@ -294,10 +280,6 @@ class FloorObject:
         self._generate_mesh()
         self._position = np.array([0, 0, 0])
         self._texture = FloorTexture(512)
-
-    def __del__(self):
-        glDeleteVertexArrays(1, (self._vao,))
-        glDeleteBuffers(1, (self._vbo,))
 
     def _generate_mesh(self):
         vertices = np.array([
