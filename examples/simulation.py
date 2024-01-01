@@ -3,6 +3,7 @@ import signal
 from math import cos, pi, sin
 from time import sleep
 from threading import Timer
+import os
 
 import cv2
 import numpy as np
@@ -10,10 +11,11 @@ import pygame
 from pygame.locals import *
 
 from examples.renderer import MarkerObject, Renderer
-from libs.Camera import Camera, MockedCamera
+from libs.Camera import Camera, MockedCamera, get_cameras_from_file
 from libs.Rover import MockedRover
-from libs.utilities import degrees_to_meters, meters_to_degrees, parse_config_file, get_camera_matrices
+from libs.utilities import degrees_to_meters, meters_to_degrees, parse_config_file
 
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 # this stuff makes it ctrl-c-able
 def signal_handler(sig, frame):
@@ -29,23 +31,24 @@ CAMERA_V_FOV = 50
 
 def main():
     sim = Simulation()
-    # sim.create_gps_target(10, 0, degrees=False)
-    # sim.create_aruco_target(0, 10, 10, degrees=False)
-    # sim.rover.add_ar_marker(0)
+    sim.create_gps_target(10, 0, degrees=False)
+    sim.create_aruco_target(0, 14, 0, degrees=False)
+    sim.rover.add_ar_marker(0)
 
-    rover_lat = 18
+    rover_lat = 30
     rover_lon = 0
-    # sim.set_rover_position(rover_lat, rover_lon)
-    # sim.set_rover_bearing(90, True)
-    sim.create_gps_target(0, 30, degrees=False)
-    d_lat = np.random.random()*20-10
-    d_lon = np.random.random()*20-10
-    tag_lat = 20
-    tag_lon = 50
-    sim.create_aruco_target(3, tag_lat, tag_lon, degrees=False)
-    sim.create_gps_target(tag_lat+d_lat, tag_lon+d_lon, degrees=False)
-    sim.rover.add_ar_marker(3)
+    sim.set_rover_position(rover_lat, rover_lon)
+    sim.set_rover_bearing(180, True)
+    # sim.create_gps_target(0, 30, degrees=False)
+    # d_lat = np.random.random()*20-10
+    # d_lon = np.random.random()*20-10
+    # tag_lat = 20
+    # tag_lon = 50
+    # sim.create_aruco_target(3, tag_lat, tag_lon, degrees=False)
+    # sim.create_gps_target(tag_lat+d_lat, tag_lon+d_lon, degrees=False)
+    # sim.rover.add_ar_marker(3)
     sim.start(looking_for_target=True)
+
     # sim.rover.halt()
 
     # stop_timer = Timer(10, sim.stop)
@@ -69,47 +72,13 @@ class Simulation:
         self._camera_height = int(cfg['CAMERA']['HEIGHT'])
         self._camera_fps = int(cfg['CAMERA']['FPS'])
 
-        self.renderer = Renderer(
-            self._camera_width, self._camera_height, CAMERA_V_FOV, hide_window=False)
+        self.renderer = Renderer(hide_window=False)
 
-        camera_name = cfg['CAMERA']['NAME']
+        # camera_name = cfg['CAMERA']['NAME']
 
-        intrinsic, distortion = get_camera_matrices(
-            camera_name, self._camera_width, self._camera_height)
+        cameras = get_cameras_from_file('cameralist_sim.json', self.renderer)
 
-        camera_center_pos = np.array([0, 0, 0], dtype=np.float32)
-        camera_center_yaw = 0
-        camera_left_pos = np.array([-.2, 0, .05], dtype=np.float32)
-        camera_left_yaw = -40
-        camera_right_pos = np.array([.2, 0, 0.05], dtype=np.float32)
-        camera_right_yaw = 40
-
-        self.mocked_camera_center = MockedCamera(
-            self.renderer, 0, self._camera_width, self._camera_height, self._camera_fps,
-            intrinsic=intrinsic,
-            distortion=distortion,
-            position=camera_center_pos,
-            yaw=camera_center_yaw)
-
-        self.mocked_camera_left = MockedCamera(
-            self.renderer, 1, self._camera_width, self._camera_height, self._camera_fps,
-            intrinsic=intrinsic,
-            distortion=distortion,
-            position=camera_left_pos,
-            yaw=camera_left_yaw)
-
-        self.mocked_camera_right = MockedCamera(
-            self.renderer, 2, self._camera_width, self._camera_height, self._camera_fps,
-            intrinsic=intrinsic,
-            distortion=distortion,
-            position=camera_right_pos,
-            yaw=camera_right_yaw)
-
-        self.renderer.add_camera(camera_center_pos, camera_center_yaw)
-        self.renderer.add_camera(camera_left_pos, camera_left_yaw)
-        self.renderer.add_camera(camera_right_pos, camera_right_yaw)
-
-        cameras = [self.mocked_camera_center, self.mocked_camera_left, self.mocked_camera_right]
+        self.renderer.add_cameras(cameras)
 
         self.rover = MockedRover()
         self.rover.configure(cfg)
@@ -155,8 +124,8 @@ class Simulation:
 
     def start(self, looking_for_target):
         self._running = True
-        self.rover.start_navigation(self.gps_targets, looking_for_target)
         self.renderer.start()
+        self.rover.start_navigation(self.gps_targets, looking_for_target)
 
     def stop(self):
         self._running = False
@@ -209,7 +178,10 @@ class Viewer:
         self._screen = pygame.display.set_mode(
             (self._width, self._height), RESIZABLE)
         self.clock = pygame.time.Clock()
-        self._camera_pos = np.array([0, 0], dtype=np.float32)
+        lat_deg, lon_deg = sim.rover._gps.get_real_position()
+        lat_m = degrees_to_meters(lat_deg)
+        lon_m = degrees_to_meters(lon_deg)
+        self._camera_pos = np.array([lon_m, lat_m], dtype=np.float32)
         self._scale = 50 / self._width  # meters per pixel
         self._rover_size = 1  # meter
         self._orig_rover_rect = pygame.surface.Surface(
@@ -293,8 +265,8 @@ class Viewer:
         self._screen.blit(rover_rect, (rover_x-bounds.width //
                                        2, rover_y-bounds.height//2))
 
-        calc_bearing = rover._gps.get_bearing()
-        calc_bearing_rad = calc_bearing * pi / 180
+        calc_bearing_deg = rover._gps.get_bearing()
+        calc_bearing_rad = calc_bearing_deg * pi / 180
 
         # draw dots represnting camera positions
         for camera in rover._object_tracker.cameras:

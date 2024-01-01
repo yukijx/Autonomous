@@ -1,0 +1,44 @@
+{
+    "indices" : [0],
+    "cameras" : [
+        {
+            "name" : "center_cam",
+            "device" : "/dev/video0",
+            "width" : 1920,
+            "height" : 1080,
+            "fps" : 30,
+            "v_fov" : 50,
+            "format" : "MJPG",
+            "matrix_name": "default",
+            "x_offset": 0,
+            "z_offset": 0,
+            "yaw": 0
+        },
+        {
+            "name" : "left_cam",
+            "device" : "/dev/video0",
+            "width" : 1920,
+            "height" : 1080,
+            "fps" : 30,
+            "v_fov" : 50,
+            "format" : "MJPG",
+            "matrix_name": "default",
+            "x_offset": -0.2,
+            "z_offset": 0,
+            "yaw": -45
+        },
+        {
+            "name" : "right_cam",
+            "device" : "/dev/video1",
+            "width" : 1920,
+            "height" : 1080,
+            "fps" : 30,
+            "v_fov" : 50,
+            "format" : "MJPG",
+            "matrix_name": "default",
+            "x_offset": 0.2,
+            "z_offset": 0,
+            "yaw": 45
+        }
+    ]
+}

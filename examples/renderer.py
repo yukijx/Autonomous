@@ -337,10 +337,9 @@ class FloorObject:
         self._texture.unbind()
         
 class Renderer:
-    def __init__(self, width, height, v_fov, hide_window=False):
-        self._width = width
-        self._height = height
-        self._v_fov = v_fov
+    def __init__(self, hide_window=False):
+        self._window_width = 1920
+        self._window_height = 1080
         self._hide_window = hide_window
         self._running = False
 
@@ -349,9 +348,13 @@ class Renderer:
 
         self._n_cameras = 0
         self._camera_index = 0
+        self._camera_widths = []
+        self._camera_heights = []
+        self._camera_v_fovs = []
         self._camera_positions = []
         self._camera_eulers = []
-        self._rendered_frames = []
+        self._rendered_frame_keys = []
+        self._rendered_frames = {}
 
         self._init_window()
         self._init_opengl()
@@ -370,10 +373,24 @@ class Renderer:
     def stop(self):
         self._running = False
 
-    def add_camera(self, position, yaw):
+    def add_cameras(self, cameras):
+        for camera in cameras:
+            key = camera._device
+            width = camera._width
+            height = camera._height
+            v_fov = camera._v_fov
+            position = camera._position
+            yaw = camera._yaw
+            self._add_camera(key, width, height, v_fov, position, yaw)
+
+    def _add_camera(self, key, width, height, v_fov, position, yaw):
+        self._camera_widths.append(width)
+        self._camera_heights.append(height)
+        self._camera_v_fovs.append(v_fov)
         self._camera_positions.append(position)
         self._camera_eulers.append(np.array([0, 0, -np.deg2rad(yaw)], dtype=np.float32))
-        self._rendered_frames.append(None)
+        self._rendered_frames[key] = None
+        self._rendered_frame_keys.append(key)
         self._n_cameras += 1
 
     def get_frame(self, camera_index):
@@ -402,7 +419,7 @@ class Renderer:
     def _init_window(self):
         glutInit()
         glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH)
-        glutInitWindowSize(self._width, self._height)
+        glutInitWindowSize(self._window_width, self._window_height)
         glutCreateWindow("Camera Render")
         glutDisplayFunc(self._draw)
         glutReshapeFunc(self._reshape_func)
@@ -410,7 +427,14 @@ class Renderer:
             glutHideWindow()
 
     def _reshape_func(self, width, height):
-        glutReshapeWindow(self._width, self._height)
+        glutReshapeWindow(self._window_width, self._window_height)
+
+    def _set_window_size(self, width, height):
+        if width == self._window_width and height == self._window_height:
+            return
+        self._window_width = width
+        self._window_height = height
+        glutReshapeWindow(self._window_width, self._window_height)
 
     def _init_opengl(self):
         glEnable(GL_DEPTH_TEST)
@@ -420,15 +444,17 @@ class Renderer:
 
         self.shader = create_shader(vertex_source, fragment_source)
 
-        self._projection = pyrr.matrix44.create_perspective_projection_matrix(self._v_fov, self._width/self._height, 0.1, 100.0)
-        # self._view = self._get_view_matrix()
-
         glUseProgram(self.shader)
         self._view_location = glGetUniformLocation(self.shader, "view")
         self._projection_location = glGetUniformLocation(self.shader, "projection")
-        glUniformMatrix4fv(self._projection_location, 1, GL_FALSE, self._projection)
-        # glUniformMatrix4fv(self._view_location, 1, GL_FALSE, self._view)
         glUseProgram(0)
+
+    def _get_projection_matrix(self, camera_index=0):
+        v_fov = self._camera_v_fovs[camera_index]
+        width = self._camera_widths[camera_index]
+        height = self._camera_heights[camera_index]
+        return pyrr.matrix44.create_perspective_projection_matrix(v_fov, width/height, 0.1, 100.0)
+
 
     def _get_view_matrix(self, camera_index=0):
         view = pyrr.matrix44.create_identity()
@@ -448,9 +474,17 @@ class Renderer:
 
         glUseProgram(self.shader)
 
+        projection = self._get_projection_matrix(self._camera_index)
+        glUniformMatrix4fv(self._projection_location, 1, GL_FALSE, projection)
         view = self._get_view_matrix(self._camera_index)
-
         glUniformMatrix4fv(self._view_location, 1, GL_FALSE, view)
+
+        width = self._camera_widths[self._camera_index]
+        height = self._camera_heights[self._camera_index]
+
+        glViewport(0, 0, width, height)
+
+        self._set_window_size(width, height)
 
         self._floor.draw(self.shader)
 
@@ -458,28 +492,35 @@ class Renderer:
             marker_object.draw(self.shader)
 
 
-        frame_data = glReadPixels(0, 0, self._width, self._height, GL_BGRA, GL_UNSIGNED_BYTE)
+        frame_data = glReadPixels(0, 0, width, height, GL_BGRA, GL_UNSIGNED_BYTE)
         glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0)
-        self._rendered_frames[self._camera_index] = self._convert_to_np_array(frame_data)
+        key = self._rendered_frame_keys[self._camera_index]
+        self._rendered_frames[key] = self._convert_to_np_array(width, height, frame_data)
         self._camera_index = (self._camera_index + 1) % self._n_cameras
 
         glutSwapBuffers()
         # time.sleep(.1)
             
-    def _convert_to_np_array(self, data):
-        arr = np.frombuffer(data, dtype=np.uint8).reshape(self._height, self._width, 4)
+    def _convert_to_np_array(self, width, height, data):
+        arr = np.frombuffer(data, dtype=np.uint8).reshape(height, width, 4)
         arr = np.flip(arr, 0)
         arr = np.ascontiguousarray(arr)
         return arr
 
 if __name__ == "__main__":
-    renderer = Renderer(1920, 1080, 50)
+    renderer = Renderer()
     camera_pos_1 = np.array([.2, 0, 0])
     camera_yaw_1 = 0
+    camera_width_1 = 640
+    camera_height_1 = 480
+    camera_v_fov_1 = 60
+    renderer._add_camera(0, camera_width_1, camera_height_1, camera_v_fov_1, camera_pos_1, camera_yaw_1)
     camera_pos_2 = np.array([-.2, 0, 0])
     camera_yaw_2 = 30
-    renderer.add_camera(camera_pos_1, camera_yaw_1)
-    renderer.add_camera(camera_pos_2, camera_yaw_2)
+    camera_width_2 = 1280
+    camera_height_2 = 720
+    camera_v_fov_2 = 60
+    renderer._add_camera('b', camera_width_2, camera_height_2, camera_v_fov_2, camera_pos_2, camera_yaw_2)
     m1 = MarkerObject(0, 0.20)
     m1.set_position(np.array([1, 1, -5]))
     m2 = MarkerObject(1, 0.20)

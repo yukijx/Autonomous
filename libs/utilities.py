@@ -114,26 +114,6 @@ def parse_config_file(filepath) -> Dict[str, Dict[str, str]]:
         raise FileNotFoundError(f'Could not find config file at {filepath}')
     return {section: {entry.upper(): val for entry,val in config[section].items()} for section in config.sections()}
 
-def get_camera_matrices(name, width, height) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Gets the intrinsic and distortion matrices from a calibration file
-    
-    Args:
-        name (str): Name of camera
-        width (int): Width of camera
-        height (int): Height of camera
-        
-    Returns:
-        tuple[np.ndarray, np.darray]: Intrinsic and distortion matrices
-    """
-    cwd = os.getcwd()
-    ind = cwd.find('Autonomous')
-    cwd = cwd[:ind+11]
-    # get the intrinsic and distortion matrices from a calibration file
-    intrinsic = np.load(f'{cwd}/cfg/{name}_{width}_{height}_intrinsic.npy')
-    distortion = np.load(f'{cwd}/cfg/{name}_{width}_{height}_distortion.npy')
-    return intrinsic, distortion
-
 def calc_average_bearing(bearings: list) -> float:
     """
     Calculates the average bearing from a list of bearings

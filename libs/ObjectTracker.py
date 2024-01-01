@@ -157,10 +157,10 @@ class ObjectTracker:
                 camera.start()
                 width = camera._width
                 height = camera._height
-                fps = camera._framerate
+                fps = camera._fps
                 if self._save_to_disk:
                     start_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                    video_writer = cv2.VideoWriter(f"../recordings/autonomous_{start_timestamp}_{camera._camera_id}.avi", cv2.VideoWriter_fourcc(
+                    video_writer = cv2.VideoWriter(f"../recordings/autonomous_{start_timestamp}_{camera._device}.avi", cv2.VideoWriter_fourcc(
                         *'MJPG'), fps, (width, height), False)
                     self._video_writers.append(video_writer)
             print('starting ar thread')
@@ -286,6 +286,8 @@ class ObjectTracker:
             -cos(rover_bearing) * camera_offset_front_deg
         measured_coord = get_coordinates(
             camera_lat_deg, camera_lon_deg, distance_from_camera/1000, yaw + rover_bearing + angle_from_camera)
+        # this converts the distance from the camera to the marker to the distance from the rover to the marker
+        # realistically, the distance from the camera to the marker is more accurate, so we should use that
         distance_from_rover = distance_to(
             rover_lat, rover_lon, measured_coord[0], measured_coord[1])*1000
         lat_m = degrees_to_meters(measured_coord[0])

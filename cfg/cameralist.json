@@ -1,0 +1,33 @@
+{
+    "indices" : [0,1],
+    "cameras" : [
+        {
+            "name" : "Center_Cam",
+            "device" : "/dev/video0",
+            "width" : 1920,
+            "height" : 1080,
+            "fps" : 30,
+            "v_fov" : 50,
+            "format" : "MJPG",
+            "matrix_name": "default",
+            "x_offset": 0,
+            "y_offset": 0,
+            "z_offset": 0,
+            "yaw": 0
+        },
+        {
+            "name" : "HD Webcam",
+            "device" : "/dev/video4",
+            "width" : 1920,
+            "height" : 1080,
+            "fps" : 30,
+            "v_fov" : 50,
+            "format" : "MJPG",
+            "matrix_name": "default",
+            "x_offset": 0,
+            "y_offset": 0,
+            "z_offset": 0,
+            "yaw": 0
+        }
+    ]
+}
