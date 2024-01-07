@@ -95,7 +95,7 @@ class GPSInterface:
         self.height = 0  # meters (? not sure never used this)
         self.time = 0  # seconds (? not sure about this either)
         self.error = 0  # meters (? this needs to be checked)
-        self.bearing = 0.0  # degrees
+        self.bearing = 0.0 # degrees
         self._running = False
         self._UPDATE_PERIOD = .25  # seconds
 
@@ -104,9 +104,7 @@ class GPSInterface:
 
         # create a circular queue of average bearings
         # to smooth out some noise
-        self._AVERAGE_BEARING_LENGTH = 6
-        self._average_bearing = [0] * self._AVERAGE_BEARING_LENGTH
-        self._average_bearing_index = 0
+        self._set_avg_bearing_list(self.bearing, 10)
 
     def configure(self, config):
         """
@@ -117,10 +115,21 @@ class GPSInterface:
         """
         self._UPDATE_PERIOD = float(config['GPS_UPDATE_PERIOD'])
         bearing_length = int(config['BEARING_LIST_LENGTH'])
-        if bearing_length != self._AVERAGE_BEARING_LENGTH:
-            self._AVERAGE_BEARING_LENGTH = bearing_length
-            self._average_bearing = [0] * self._AVERAGE_BEARING_LENGTH
-            self._average_bearing_index = 0
+        if bearing_length != self._average_bearing_length:
+            self._set_avg_bearing_list(self.bearing, bearing_length)
+
+    def _set_avg_bearing_list(self, value, length):
+        """
+        Sets the average bearing list to a list of a given length
+        and fills it with the given value
+
+        Args:
+            value (float): Value to fill the list with
+            length (int): Length of list
+        """
+        self._average_bearing_length = length
+        self._average_bearing = [value] * length
+        self._average_bearing_index = 0
 
     def get_position(self):
         """
@@ -217,7 +226,7 @@ class GPSInterface:
 
         self._average_bearing[self._average_bearing_index] = bearing
         self._average_bearing_index = (
-            self._average_bearing_index + 1) % self._AVERAGE_BEARING_LENGTH
+            self._average_bearing_index + 1) % self._average_bearing_length
 
         # if the average magnitude is greater than 90, then the average
         # is probably on the other side of the circle, so we need to
@@ -242,10 +251,12 @@ class GPSInterface:
                 left_speed, right_speed = self._wheels.get_wheel_speeds()
 
                 # if the rover is moving, update the bearing
-                if left_speed != 0 or right_speed != 0:
-                    is_reversed = left_speed + right_speed < 0
-                    self.bearing = self._calc_avg_bearing(
-                        self.old_latitude, self.old_longitude, self.latitude, self.longitude, is_reversed)
+                if (left_speed != 0 or right_speed != 0) and \
+                        (self.latitude != self.old_latitude and \
+                        self.longitude != self.old_longitude):
+                        is_reversed = left_speed + right_speed < 0
+                        self.bearing = self._calc_avg_bearing(
+                            self.old_latitude, self.old_longitude, self.latitude, self.longitude, is_reversed)
             else:
                 pass
             # maybe print info or sleep or something idk
@@ -275,7 +286,7 @@ class MockedGPSInterface(GPSInterface):
         self._real_lon = 0  # degrees
         self._real_bearing = 0  # radians
         # generator for noise
-        self._ADD_NOISE = True
+        self._ADD_NOISE = False
         self._noise_dev_m = 0.38  # 38 cm, makes it so 95% of noise is within .75 meters
         self._noise_generator = Generator(PCG64(time.time_ns()))
         # made this up, should be close to real speed
@@ -340,7 +351,9 @@ class MockedGPSInterface(GPSInterface):
             left_speed, right_speed = self._wheels.get_wheel_speeds()
 
             # if the rover is moving, update the bearing
-            if left_speed != 0 or right_speed != 0:
+            if (left_speed != 0 or right_speed != 0) and \
+                    (self.latitude != self.old_latitude and \
+                    self.longitude != self.old_longitude):
                 is_reversed = left_speed + right_speed < 0
                 # update the bearing
                 self.bearing = self._calc_avg_bearing(

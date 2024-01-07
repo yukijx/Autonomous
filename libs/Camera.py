@@ -287,7 +287,7 @@ def generate_default_matrices(width, height, v_fov) -> tuple[np.ndarray, np.ndar
         tuple[np.ndarray, np.ndarray]: Intrinsic and distortion matrices
     """
     # generate default intrinsic and distortion matrices
-    f = width / (3.0 * np.tan(np.radians(v_fov / 2)))
+    f = width / (4.0 * np.tan(np.radians(v_fov / 2)))
     intrinsic = np.array([
         [f, 0, width / 2],
         [0, f, height / 2],

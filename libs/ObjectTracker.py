@@ -1,7 +1,7 @@
 import os
 import threading
 from datetime import datetime
-from time import time
+from time import time, perf_counter_ns
 from math import sin, cos
 
 import cv2
@@ -229,10 +229,13 @@ class ObjectTracker:
         return self.tracked_objects[closest_marker]
 
     def _tracking_loop(self):
+        last_process_time = perf_counter_ns()
         while self._running:
             for index, camera in enumerate(self.cameras):
                 frame = camera.get_frame()
                 if frame is not None and frame is not self._last_frames[index]:
+                    print('time since last frame', (perf_counter_ns() - last_process_time)/1e6)
+                    last_process_time = perf_counter_ns()
                     self._last_frames[index] = frame
                     frame = self._process_camera_frame(camera, frame)
                     self._save_frame(frame, index)

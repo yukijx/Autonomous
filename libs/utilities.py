@@ -129,6 +129,7 @@ def calc_average_bearing(bearings: list) -> float:
     # add 360 to all the negative bearings in the queue to properly
     # calculate the average
     average_mag = sum([abs(x) for x in bearings]) / len(bearings)
+    print('av_mag', average_mag)
     if average_mag > 90:
         temp_bearings = [x + 360 if x < 0 else x for x in bearings]
         avg = (sum(temp_bearings) / len(bearings))

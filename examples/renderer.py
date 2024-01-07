@@ -343,7 +343,7 @@ class Renderer:
         self._hide_window = hide_window
         self._running = False
 
-        self._rover_position = np.array([1, 1, 0], dtype=np.float32)
+        self._rover_position = np.array([0, 1, 0], dtype=np.float32)
         self._rover_eulers = np.array([0, 0, 0], dtype=np.float32)
 
         self._n_cameras = 0
@@ -363,7 +363,7 @@ class Renderer:
         self._marker_objects = []
 
         self._render_thread = Thread(target=self._render_loop, name=(
-            'render'), args=())
+            'render cameras'))
         
 
     def start(self):
@@ -508,19 +508,24 @@ class Renderer:
         return arr
 
 if __name__ == "__main__":
-    renderer = Renderer()
+    renderer = Renderer(False)
+    inital_pos = np.array([0, 1, 0])
+    inital_yaw = 0
+    renderer.set_rover_position(inital_pos[0], -inital_pos[2], inital_pos[1])
+    renderer.set_rover_bearing(inital_yaw)
     camera_pos_1 = np.array([.2, 0, 0])
     camera_yaw_1 = 0
-    camera_width_1 = 640
-    camera_height_1 = 480
-    camera_v_fov_1 = 60
+    camera_width_1 = 1280
+    camera_height_1 = 720
+    camera_v_fov_1 = 50
     renderer._add_camera(0, camera_width_1, camera_height_1, camera_v_fov_1, camera_pos_1, camera_yaw_1)
-    camera_pos_2 = np.array([-.2, 0, 0])
-    camera_yaw_2 = 30
-    camera_width_2 = 1280
-    camera_height_2 = 720
-    camera_v_fov_2 = 60
-    renderer._add_camera('b', camera_width_2, camera_height_2, camera_v_fov_2, camera_pos_2, camera_yaw_2)
+    # camera_pos_2 = np.array([-.2, 0, 0])
+    # camera_yaw_2 = 30
+    # camera_width_2 = 1280
+    # camera_height_2 = 720
+    # camera_v_fov_2 = 60
+    # renderer._add_camera('b', camera_width_2, camera_height_2, camera_v_fov_2, camera_pos_2, camera_yaw_2)
+    
     m1 = MarkerObject(0, 0.20)
     m1.set_position(np.array([1, 1, -5]))
     m2 = MarkerObject(1, 0.20)
@@ -528,12 +533,13 @@ if __name__ == "__main__":
     renderer.add_marker_object(m1)
     renderer.add_marker_object(m2)
     renderer.start()
-    time.sleep(1)
     while renderer._running:
         for m in renderer._marker_objects:
             m.set_rotation(m._rotation + np.array([0, 0.1, 0]))
-        frame = renderer.get_frame(0)
-        if frame is not None:
-            cv2.imshow("frame", frame)
-            if cv2.waitKey(33) == ord('q'):
-                renderer.stop()
+            # renderer._draw()
+            time.sleep(.03)
+    #     frame = renderer.get_frame(0)
+        # if frame is not None:
+        #     cv2.imshow("frame", frame)
+        #     if cv2.waitKey(33) == ord('q'):
+        #         renderer.stop()

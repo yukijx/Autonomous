@@ -46,21 +46,21 @@ class WheelInterface:
                 self._speeds = [0, 0]
                 
     def get_wheel_speeds(self):
-        with self._lock:
-            return self._speeds
+        return self._speeds
 
     def _update_loop(self):
         print('this is the real one')
         while self._running:
-            with self._lock:
-                self._send_wheel_speeds()
+            # with self._lock:
+            self._send_wheel_speeds()
             sleep(self._SEND_PERIOD)
 
     def _send_wheel_speeds(self):
         """
         Sends wheel speed message to the rover
         """
-        left, right = self._speeds
+        with self._lock:
+            left, right = self._speeds
 
         # send 0 if set has not been called in a while
         if time() - self._last_received > self._TIMEOUT:
@@ -106,6 +106,6 @@ class MockedWheelInterface(WheelInterface):
         while self._running:
             # skip the wheel speed update
             # print('Wheel speed in wheel thread: ', self._speeds)
-            with self._lock:
-                self._send_wheel_speeds()
+            # with self._lock:
+            self._send_wheel_speeds()
             sleep(self._SEND_PERIOD)

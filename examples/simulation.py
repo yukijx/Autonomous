@@ -1,7 +1,7 @@
 import random
 import signal
 from math import cos, pi, sin
-from time import sleep
+from time import sleep, perf_counter_ns
 from threading import Timer
 import os
 
@@ -27,7 +27,6 @@ signal.signal(signal.SIGINT, signal_handler)
 SIMULATION_FREQ = 100  # Hz
 VIEWER_WIDTH = 1280
 VIEWER_HEIGHT = 720
-CAMERA_V_FOV = 50
 
 def main():
     sim = Simulation()
@@ -47,14 +46,26 @@ def main():
     # sim.create_aruco_target(3, tag_lat, tag_lon, degrees=False)
     # sim.create_gps_target(tag_lat+d_lat, tag_lon+d_lon, degrees=False)
     # sim.rover.add_ar_marker(3)
-    sim.start(looking_for_target=True)
 
+    # sim.renderer.add_cameras(sim.cameras)
+    # sim.renderer.start()
+    # sim.renderer.set_rover_bearing(np.deg2rad(180))
+    # sim.renderer.set_rover_position(0, 0, 1)
+
+    # sleep(1)
+
+    sim.start(looking_for_target=True)
     # sim.rover.halt()
 
     # stop_timer = Timer(10, sim.stop)
     # stop_timer.start()
 
     viewer = Viewer(sim)
+    while True:
+        pass
+        # sim.step(1/SIMULATION_FREQ)
+        # sleep(1/SIMULATION_FREQ)
+    
     viewer.run()
 
 
@@ -68,27 +79,13 @@ class Simulation:
 
         cfg = parse_config_file('../cfg/config.ini')
         self._aruco_size = float(cfg['TRACKER']['ARUCO_SIZE'])
-        self._camera_width = int(cfg['CAMERA']['WIDTH'])
-        self._camera_height = int(cfg['CAMERA']['HEIGHT'])
-        self._camera_fps = int(cfg['CAMERA']['FPS'])
 
         self.renderer = Renderer(hide_window=False)
 
-        # camera_name = cfg['CAMERA']['NAME']
-
-        cameras = get_cameras_from_file('cameralist_sim.json', self.renderer)
-
-        self.renderer.add_cameras(cameras)
+        self.cameras = get_cameras_from_file('cameralist_sim.json', self.renderer)
 
         self.rover = MockedRover()
         self.rover.configure(cfg)
-
-        self.rover._object_tracker._show_frames = False
-
-        self.rover.start_tracking(cameras)
-        self.rover.start_wheels('', 0)
-        self.rover.start_gps('', 0)
-        self.rover.start_lights('', 0)
 
     def create_random_locs(self, num):
         spread = 200
@@ -123,14 +120,21 @@ class Simulation:
                               for ind, pos in zip(indices, target_pos_deg)]
 
     def start(self, looking_for_target):
-        self._running = True
-        self.renderer.start()
-        self.rover.start_navigation(self.gps_targets, looking_for_target)
+        if not self._running:
+            self._running = True
+            self.renderer.add_cameras(self.cameras)
+            self.renderer.start()
+            self.rover.start_tracking(self.cameras)
+            self.rover.start_wheels('', 0)
+            self.rover.start_gps('', 0)
+            self.rover.start_lights('', 0)
+            self.rover.start_navigation(self.gps_targets, looking_for_target)
 
     def stop(self):
-        self._running = False
-        self.renderer.stop()
-        self.rover.stop()
+        if self._running:
+            self._running = False
+            self.renderer.stop()
+            self.rover.stop()
 
     def set_rover_position(self, lat, lon, degrees=False):
         if not degrees:
@@ -148,9 +152,12 @@ class Simulation:
         if degrees:
             self.rover._gps._real_bearing = np.deg2rad(bearing)
             self.rover._gps.bearing = bearing
+            self.rover._gps._set_avg_bearing_list(bearing, self.rover._gps._average_bearing_length)
         else:
             self.rover._gps._real_bearing = bearing
-            self.rover._gps.bearing = np.rad2deg(bearing)
+            bearing_deg = np.rad2deg(bearing)
+            self.rover._gps.bearing = bearing_deg
+            self.rover._gps._set_avg_bearing_list(bearing_deg, self.rover._gps._average_bearing_length)
 
     def step(self, dt):
         self.rover._gps.update_position(dt)
@@ -292,7 +299,13 @@ class Viewer:
                          (rover_x, rover_y), (bearing_x, bearing_y), 3)
 
     def run(self):
+        last_time = perf_counter_ns()
         while self._running:
+            current_time = perf_counter_ns()
+            dt = (current_time - last_time) / 1e9
+            last_time = current_time
+            print('loop time', dt*1e3)
+
             for event in pygame.event.get():
                 if event.type == QUIT:
                     self._running = False
@@ -334,7 +347,15 @@ class Viewer:
 
             self._screen.fill((255, 255, 255))
 
-            self.sim.step(1/SIMULATION_FREQ)
+
+            sim_step_start_time = perf_counter_ns()
+
+            self.sim.step(dt)
+
+            sim_step_end_time = perf_counter_ns()
+            print('sim', (sim_step_end_time-sim_step_start_time)/1e6)
+
+            pygame_start_time = perf_counter_ns()
 
             self.draw_gps_targets(self.sim.gps_targets)
             self.draw_rover(self.sim.rover)
@@ -342,16 +363,18 @@ class Viewer:
             self.draw_marker_objects(self.sim.aruco_markers)
             self.draw_tracked_objects(self.sim.rover)
 
+            pygame_end_time = perf_counter_ns()
+            print('draw time', (pygame_end_time-pygame_start_time)/1e6)
+
+            display_start_time = perf_counter_ns()
+
             pygame.display.flip()
 
-            if self.sim.rover._object_tracker._show_frames:
-                frame = self.sim.rover._object_tracker._processed_frame
-                if frame is not None:
-                    frame = cv2.resize(frame, (640, 360))
-                    cv2.imshow('frame', frame)
-                    cv2.waitKey(33)
+            display_end_time = perf_counter_ns()
+            print('display', (display_end_time-display_start_time)/1e6)
 
-            self.clock.tick(SIMULATION_FREQ)
+            # actual_time = self.clock.tick(SIMULATION_FREQ)
+            # print('time', actual_time)
 
 
 if __name__ == '__main__':

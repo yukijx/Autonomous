@@ -10,7 +10,11 @@ setuptools.setup(name='autonomous', version='1.1',
         install_requires=[
         'opencv-contrib-python',
         'numpy',
-        'pytest'
+        'pytest',
+        'pygame',
+        'pyopengl',
+        'pyopengl-accelerate',
+        'pyrr'
     ],
     )
 
