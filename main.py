@@ -67,6 +67,10 @@ def drive(rover):
     lights.start()
     #UDPOut.sendLED(mbedIP, mbedPort, 'g')
 
+    f = open("Recorded_Coordinates_"+ args.latLong + ".txt", "a")
+    f.write("Latitude: " + rover.gps.latitude + "\n  Longitude: " + rover.gps.longitude)
+    f.close()
+
 if __name__ == "__main__":
     os.chdir(path)
     print(os.getcwd())
