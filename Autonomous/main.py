@@ -65,6 +65,12 @@ def drive(rover):
     flashing=True
     lights = threading.Thread(target=flash)
     lights.start()
+
+    f = open("Recorded_Coordinates_"+ args.latLong + ".txt", "a")
+    f.write("Latitude: " + rover.gps.latitude + "\n Longitude: " + rover.gps.longitude)
+    f.close()
+
+
     #UDPOut.sendLED(mbedIP, mbedPort, 'g')
 
 if __name__ == "__main__":
